@@ -3,19 +3,19 @@ import sqlite3
 import random
 import smtplib
 import os
-##import pandas as pd
+# import pandas as pd  ← COMENTADO
 from email.mime.text import MIMEText
 from datetime import datetime
 from dotenv import load_dotenv
-import os
+
+load_dotenv()
 
 app = Flask(__name__)
-
-
-load_dotenv()  # Carga el archivo .env
-
 app.secret_key = os.getenv('SECRET_KEY')
 DATABASE = 'inventario.db'
+
+# Asegura que la DB se crea al iniciar
+init_db()
 
 EXCEL_FILENAME = "20260630 Inventario de laptops TADEEM.xlsx"
 CSV_FILENAME = "20260630 Inventario de laptops TADEEM.xlsx - TECNICA.csv"
