@@ -14,8 +14,6 @@ app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY')
 DATABASE = 'inventario.db'
 
-# Asegura que la DB se crea al iniciar
-init_db()
 
 EXCEL_FILENAME = "20260630 Inventario de laptops TADEEM.xlsx"
 CSV_FILENAME = "20260630 Inventario de laptops TADEEM.xlsx - TECNICA.csv"
@@ -156,6 +154,9 @@ def init_db():
             except Exception as e:
                 print(f"[DATA-CORE] Error: {e}")
     conn.close()
+
+    # Asegura que la DB se crea al iniciar
+init_db()
 
 # ==========================================
 # PLANTILLAS DE DISEÑO ADAPTATIVO (UI SPA)
