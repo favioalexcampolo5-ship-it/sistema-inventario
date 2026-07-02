@@ -2,18 +2,15 @@ from flask import Flask, render_template_string, request, redirect, url_for, ses
 import sqlite3
 import random
 import os
-import csv
 from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
-# Fallback seguro si no se encuentra la variable de entorno
+# Fallback seguro por si falla la variable de entorno
 app.secret_key = os.getenv('SECRET_KEY', 'clave_secreta_para_sesiones_erp_generico')
 DATABASE = 'inventario.db'
-
-CSV_FILENAME = "20260630 Inventario de laptops TADEEM.xlsx - TECNICA.csv"
 
 # Lista de códigos de credenciales de trabajadores autorizados
 CREDENCIALES_VALIDAS = [
@@ -23,7 +20,7 @@ CREDENCIALES_VALIDAS = [
 ]
 
 # ==========================================
-# ESTRUCTURA DE BASE DE DATOS Y LECTOR NATIVO
+# ESTRUCTURA DE BASE DE DATOS Y CATÁLOGO EMBEBIDO
 # ==========================================
 def init_db():
     conn = sqlite3.connect(DATABASE)
@@ -70,56 +67,95 @@ def init_db():
     if not cursor.fetchone():
         cursor.execute("INSERT INTO usuarios (username, password, nombre, email, telefono) VALUES ('admin', 'admin123', 'Administrador General', 'soporte@empresa.com', '999999999')")
     
+    # ---------------------------------------------------------
+    # MATRIZ DE INVENTARIO HARDCODEADA (A PRUEBA DE NUBE)
+    # ---------------------------------------------------------
     cursor.execute("SELECT COUNT(*) FROM equipos")
     if cursor.fetchone()[0] == 0:
-        if os.path.exists(CSV_FILENAME):
-            print(f"[DATA-CORE] Cargando inventario de forma nativa desde: {CSV_FILENAME}")
-            try:
-                # Lector nativo estándar integrado (Compatible con Render)
-                with open(CSV_FILENAME, mode='r', encoding='utf-8') as f:
-                    reader = csv.DictReader(f)
-                    agrupados = {}
-                    
-                    for row in reader:
-                        marca = row.get('MARCA', '').strip().upper()
-                        modelo = row.get('MODELO', '').strip()
-                        procesador = row.get('Procesador', '').strip()
-                        memoria = row.get('Memoria', '').strip()
-                        
-                        nombre_completo = f"{marca} {modelo} | {procesador} | {memoria}"
-                        
-                        if nombre_completo not in agrupados:
-                            agrupados[nombre_completo] = {"marca": marca, "stock": 0}
-                        agrupados[nombre_completo]["stock"] += 1
+        print("[DATA-CORE] Inicializando base de datos con catálogo embebido (Hardcoded Matrix)...")
+        
+        # Diccionario con el inventario real procesado desde el archivo TADEEM
+        # Formato: "Nombre Técnico" : ("MARCA", Stock_Total)
+        inventario_embebido = {
+            "DELL Latitude 3420 | Core i5-1135G7 | 8GB": ("DELL", 1),
+            "DELL Latitude 3420 (A0247) | Core i5-1135G7 | 16GB": ("DELL", 1),
+            "DELL Latitude 3420 (A0248) | Core i5-1135G7 | 16GB": ("DELL", 1),
+            "DELL Latitude 3520 | Core i7-1165G7 | 24GB": ("DELL", 20),
+            "DELL Latitude 3520 | Core i7-1165G7 | 8GB": ("DELL", 59),
+            "DELL Latitude 5420 | Core i5-1135G7 | 16GB": ("DELL", 1),
+            "DELL Latitude 5520 | Core i7-1185G7 | 16GB": ("DELL", 2),
+            "DELL Latutude 3420 | Core i5-1135G7 | 16GB": ("DELL", 1),
+            "DELL Precision 3551 (A0315) | Core i7-10850H | 32GB": ("DELL", 1),
+            "DELL ThinkPad L15 Gen2 | Core i5-1135G7 | 16GB": ("DELL", 1),
+            "DELL Vostro 3400 | Core i5-1135G7 | 16GB": ("DELL", 1),
+            
+            "HP 250 G10 | Core i7-1355U | 16GB": ("HP", 1),
+            "HP 250 G9 | Core i7-1255U | 16GB": ("HP", 44),
+            "HP 348 G7 | Core i7-10510U | 16GB": ("HP", 25),
+            "HP Victus 15-fa0007la | Core i5-12450H | 16GB": ("HP", 6),
+            "HP Victus 16-d1007la | Core i5-12500H | 16GB": ("HP", 1),
+            "HP ZBook Power 15.6 Inch G9 | Core i7-12700H | 32GB": ("HP", 1),
+            "HP Zbook Firefly 14 G8 | Core i7-1165G7 | 16GB": ("HP", 1),
+            
+            "LENOVO IdeaPad 5 14IIL05 | Core i5-1035G1 | 8GB": ("LENOVO", 1),
+            "LENOVO IdeaPad Gaming 3 15IHU6 | Core i5-11300H | 16GB": ("LENOVO", 2),
+            "LENOVO LOQ 15IAX9 | Core i5-12450HX | 16GB": ("LENOVO", 14),
+            "LENOVO LOQ 15IRH8 | Core i5-13420H | 16GB": ("LENOVO", 23),
+            "LENOVO LOQ 15IRX9 | Core i5-12450HX | 16GB": ("LENOVO", 25),
+            "LENOVO ThinkBook 14-IML | Core i5-10210U | 8GB": ("LENOVO", 10),
+            "LENOVO ThinkBook 15 G2 ITL | Core i5-1135G7 | 8GB": ("LENOVO", 3),
+            "LENOVO ThinkPad E14 Gen 2 | Core i7-1165G7 | 8GB": ("LENOVO", 7),
+            "LENOVO ThinkPad E14 Gen2 | Core i5-1135G7 | 16GB": ("LENOVO", 32),
+            "LENOVO ThinkPad E15 | Core i7-10510U | 16GB": ("LENOVO", 1),
+            "LENOVO ThinkPad E15 (A0244) | Core i7-10510U | 16GB": ("LENOVO", 1),
+            "LENOVO ThinkPad E15 (A0256) | Core i7-10510U | 16GB": ("LENOVO", 1),
+            "LENOVO ThinkPad E15 Gen2 | Core i5-1135G7 | 16GB": ("LENOVO", 1),
+            "LENOVO ThinkPad L14 Gen 2 | Core i5-1135G7 | 16GB": ("LENOVO", 12),
+            "LENOVO ThinkPad L14 Gen2 | Core i5-1135G7 | 16GB": ("LENOVO", 1),
+            "LENOVO ThinkPad L15 Gen1 | Core i5-10210U | 16GB": ("LENOVO", 12),
+            "LENOVO ThinkPad L15 Gen2 | Core i5-1135G7 | 16GB": ("LENOVO", 3),
+            "LENOVO ThinkPad L490 | Core i5-8265U | 16GB": ("LENOVO", 1),
+            "LENOVO ThinkPad L580 | Core i5-8250U | 8GB": ("LENOVO", 1),
+            "LENOVO ThinkPad P14s Gen4 | Core i7-1360P | 16GB": ("LENOVO", 1),
+            "LENOVO ThinkPad T14s Gen2 | Core i5-1135G7 | 16GB": ("LENOVO", 1),
+            "LENOVO ThinkPad T15 Gen1 | Core i5-10210U | 8GB": ("LENOVO", 1),
+            "LENOVO ThinkPad X1 Carbon Gen 9 | Core i7-1165G7 | 16GB": ("LENOVO", 1),
+            "LENOVO Thinkbook 15-IML | Core i5-10210U | 8GB": ("LENOVO", 1),
+            "LENOVO ThnikPad L15 (A0258) | Core i5-10210U | 16GB": ("LENOVO", 1),
+            "LENOVO ThnikPad L15 (A0259) | Core i5-10210U | 16GB": ("LENOVO", 1),
+            "LENOVO V14-IIL | Core i5-1035G1 | 8GB": ("LENOVO", 6),
+            "LENOVO V15-IIL | Core i5-1035G1 | 8GB": ("LENOVO", 6),
+            "LENOVO V15-ILL | Core i5-1035G1 | 8GB": ("LENOVO", 7),
+            "Lenovo ThinkBook 15 G2 ITL | Core i5-1135G7 | 8GB": ("LENOVO", 3)
+        }
+        
+        equipos_procesados = []
+        for nombre, datos in inventario_embebido.items():
+            marca = datos[0].upper().strip()
+            stock = datos[1]
+            
+            # Algoritmo de tasación comercial semanal según rendimiento
+            precio_semanal_base = 45.00
+            nombre_upper = nombre.upper()
+            
+            if any(k in nombre_upper for k in ["I9", "XEON", "VICTUS", "LOQ", "ZBOOK"]):
+                precio_semanal_base += 55.00  
+            elif any(k in nombre_upper for k in ["I7", "RYZEN 7", "PRECISION"]):
+                precio_semanal_base += 25.00   
+            
+            if any(k in nombre_upper for k in ["24GB", "32GB", "64GB"]):
+                precio_semanal_base += 15.00   
+            elif "8GB" in nombre_upper:
+                precio_semanal_base -= 5.00   
                 
-                equipos_procesados = []
-                for nombre, data in agrupados.items():
-                    marca = data["marca"]
-                    stock = data["stock"]
-                    
-                    # Algoritmo de tasación comercial semanal según rendimiento de hardware
-                    precio_semanal_base = 45.00
-                    nombre_upper = nombre.upper()
-                    
-                    if any(k in nombre_upper for k in ["I9", "XEON", "VICTUS", "LOQ", "ZBOOK"]):
-                        precio_semanal_base += 55.00  
-                    elif any(k in nombre_upper for k in ["I7", "RYZEN 7", "PRECISION"]):
-                        precio_semanal_base += 25.00   
-                    
-                    if any(k in nombre_upper for k in ["24GB", "32GB", "64GB"]):
-                        precio_semanal_base += 15.00   
-                    elif "8GB" in nombre_upper:
-                        precio_semanal_base -= 5.00   
-                        
-                    equipos_procesados.append((nombre, marca, stock, stock, max(precio_semanal_base, 30.00)))
-                    
-                cursor.executemany("INSERT INTO equipos (nombre, marca, stock_total, stock_disponible, precio_alquiler) VALUES (?, ?, ?, ?, ?)", equipos_procesados)
-                conn.commit()
-                print(f"[DATA-CORE] ✅ Auto-importación completada. {len(equipos_procesados)} modelos indexados en SQLite.")
-            except Exception as e:
-                print(f"[DATA-CORE] Error en el parseo del archivo CSV: {e}")
-        else:
-            print(f"[DATA-CORE] Advertencia: No se encontró el archivo {CSV_FILENAME}")
+            equipos_procesados.append((nombre, marca, stock, stock, max(precio_semanal_base, 30.00)))
+            
+        try:
+            cursor.executemany("INSERT INTO equipos (nombre, marca, stock_total, stock_disponible, precio_alquiler) VALUES (?, ?, ?, ?, ?)", equipos_procesados)
+            conn.commit()
+            print(f"[DATA-CORE] ✅ Auto-importación completada de forma segura. {len(equipos_procesados)} modelos indexados en SQLite.")
+        except Exception as e:
+            print(f"[DATA-CORE] ❌ Error en el parseo del diccionario nativo: {e}")
             
     conn.close()
 
@@ -820,7 +856,6 @@ def verificar_codigo():
         codigo_ingresado = request.form['codigo_ingresado'].strip()
         datos_temp = session['temp_registro']
         
-        # Validación directa por Token de Trabajador Autorizado
         if codigo_ingresado in CREDENCIALES_VALIDAS:
             conn = sqlite3.connect(DATABASE)
             cursor = conn.cursor()
