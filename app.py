@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-# Fallback seguro por si falla la variable de entorno
 app.secret_key = os.getenv('SECRET_KEY', 'clave_secreta_para_sesiones_erp_generico')
 
 # Lista de códigos de credenciales de trabajadores autorizados
@@ -275,7 +274,7 @@ VISTA_EXITO = """
 <body class="bg-slate-900 flex items-center justify-center h-screen px-4">
     <div class="bg-slate-800 p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-md border border-slate-700 text-center space-y-6">
         <div class="inline-flex p-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full">
-            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19", 7></path></svg>
         </div>
         <div>
             <h1 class="text-xl font-bold text-white">¡Operador Registrado!</h1>
@@ -988,7 +987,13 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-if __name__ == '__main__':
-    # Inicializa la DB en PostgreSQL al arrancar el servidor
+# -------------------------------------------------------------
+# LLAMADA DE CONEXIÓN GLOBAL (Indispensable para Gunicorn en Render)
+# -------------------------------------------------------------
+try:
     init_db()
+except Exception as e:
+    print(f"[CRÍTICO] Error al inicializar la base de datos: {e}")
+
+if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
