@@ -3,7 +3,7 @@ import sqlite3
 import random
 import smtplib
 import os
-import pandas as pd
+##import pandas as pd
 from email.mime.text import MIMEText
 from datetime import datetime
 from dotenv import load_dotenv
@@ -113,10 +113,11 @@ def init_db():
     cursor.execute("SELECT COUNT(*) FROM equipos")
     if cursor.fetchone()[0] == 0:
         df = None
-        if os.path.exists(EXCEL_FILENAME):
-            df = pd.read_excel(EXCEL_FILENAME)
-        elif os.path.exists(CSV_FILENAME):
-            df = pd.read_csv(CSV_FILENAME)
+# Pandas no disponible en Render
+# if os.path.exists(EXCEL_FILENAME):
+#     df = pd.read_excel(EXCEL_FILENAME)
+# elif os.path.exists(CSV_FILENAME):
+#     df = pd.read_csv(CSV_FILENAME)
             
         if df is not None:
             try:
