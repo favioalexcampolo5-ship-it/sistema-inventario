@@ -6,9 +6,15 @@ import os
 import pandas as pd
 from email.mime.text import MIMEText
 from datetime import datetime
+from dotenv import load_dotenv
+import os
 
 app = Flask(__name__)
-app.secret_key = 'clave_secreta_para_sesiones_erp_generico'
+
+
+load_dotenv()  # Carga el archivo .env
+
+app.secret_key = os.getenv('SECRET_KEY')
 DATABASE = 'inventario.db'
 
 EXCEL_FILENAME = "20260630 Inventario de laptops TADEEM.xlsx"
@@ -22,8 +28,8 @@ CREDENCIALES_VALIDAS = [
 
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-SMTP_USER = "alexxdxd890@gmail.com"  
-SMTP_PASSWORD = "ekmakqvpljvvtcsc"  
+SMTP_USER = os.getenv('SMTP_USER')  
+SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
 
 def enviar_correo_verificacion(email_destino, codigo):
     try:
