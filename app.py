@@ -1,6 +1,6 @@
 from flask import Flask, render_template_string, request, redirect, url_for, session, flash
-import sqlite3
-import random
+import psycopg2
+from psycopg2 import IntegrityError
 import os
 from datetime import datetime
 from dotenv import load_dotenv
@@ -10,7 +10,6 @@ load_dotenv()
 app = Flask(__name__)
 # Fallback seguro por si falla la variable de entorno
 app.secret_key = os.getenv('SECRET_KEY', 'clave_secreta_para_sesiones_erp_generico')
-DATABASE = 'inventario.db'
 
 # Lista de códigos de credenciales de trabajadores autorizados
 CREDENCIALES_VALIDAS = [
@@ -19,16 +18,24 @@ CREDENCIALES_VALIDAS = [
     "654321", "789123", "456789", "987654", "246810" 
 ]
 
+# Obtener URL de conexión a la base de datos de Render
+DB_URL = os.getenv('DATABASE_URL')
+if DB_URL and DB_URL.startswith("postgres://"):
+    DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
+
+def get_db_connection():
+    return psycopg2.connect(DB_URL)
+
 # ==========================================
-# ESTRUCTURA DE BASE DE DATOS Y CATÁLOGO EMBEBIDO
+# ESTRUCTURA DE BASE DE DATOS Y CATÁLOGO EMBEBIDO (POSTGRESQL)
 # ==========================================
 def init_db():
-    conn = sqlite3.connect(DATABASE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             nombre TEXT NOT NULL,
@@ -39,25 +46,25 @@ def init_db():
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS equipos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             nombre TEXT NOT NULL,
             marca TEXT NOT NULL,
             stock_total INTEGER NOT NULL,
             stock_disponible INTEGER NOT NULL,
-            precio_alquiler REAL NOT NULL
+            precio_alquiler NUMERIC NOT NULL
         )
     ''')
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transacciones (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             equipo_id INTEGER,
             cliente TEXT NOT NULL,
             telefono_cliente TEXT NOT NULL,
             fecha_inicio TEXT NOT NULL,
             fecha_fin TEXT NOT NULL,
             cantidad INTEGER NOT NULL DEFAULT 1,
-            precio_total REAL NOT NULL,
+            precio_total NUMERIC NOT NULL,
             activo INTEGER DEFAULT 1,
             FOREIGN KEY (equipo_id) REFERENCES equipos(id)
         )
@@ -67,15 +74,10 @@ def init_db():
     if not cursor.fetchone():
         cursor.execute("INSERT INTO usuarios (username, password, nombre, email, telefono) VALUES ('admin', 'admin123', 'Administrador General', 'soporte@empresa.com', '999999999')")
     
-    # ---------------------------------------------------------
-    # MATRIZ DE INVENTARIO HARDCODEADA (A PRUEBA DE NUBE)
-    # ---------------------------------------------------------
     cursor.execute("SELECT COUNT(*) FROM equipos")
     if cursor.fetchone()[0] == 0:
-        print("[DATA-CORE] Inicializando base de datos con catálogo embebido (Hardcoded Matrix)...")
+        print("[DATA-CORE] Inicializando base de datos en Postgres con catálogo embebido...")
         
-        # Diccionario con el inventario real procesado desde el archivo TADEEM
-        # Formato: "Nombre Técnico" : ("MARCA", Stock_Total)
         inventario_embebido = {
             "DELL Latitude 3420 | Core i5-1135G7 | 8GB": ("DELL", 1),
             "DELL Latitude 3420 (A0247) | Core i5-1135G7 | 16GB": ("DELL", 1),
@@ -88,7 +90,6 @@ def init_db():
             "DELL Precision 3551 (A0315) | Core i7-10850H | 32GB": ("DELL", 1),
             "DELL ThinkPad L15 Gen2 | Core i5-1135G7 | 16GB": ("DELL", 1),
             "DELL Vostro 3400 | Core i5-1135G7 | 16GB": ("DELL", 1),
-            
             "HP 250 G10 | Core i7-1355U | 16GB": ("HP", 1),
             "HP 250 G9 | Core i7-1255U | 16GB": ("HP", 44),
             "HP 348 G7 | Core i7-10510U | 16GB": ("HP", 25),
@@ -96,7 +97,6 @@ def init_db():
             "HP Victus 16-d1007la | Core i5-12500H | 16GB": ("HP", 1),
             "HP ZBook Power 15.6 Inch G9 | Core i7-12700H | 32GB": ("HP", 1),
             "HP Zbook Firefly 14 G8 | Core i7-1165G7 | 16GB": ("HP", 1),
-            
             "LENOVO IdeaPad 5 14IIL05 | Core i5-1035G1 | 8GB": ("LENOVO", 1),
             "LENOVO IdeaPad Gaming 3 15IHU6 | Core i5-11300H | 16GB": ("LENOVO", 2),
             "LENOVO LOQ 15IAX9 | Core i5-12450HX | 16GB": ("LENOVO", 14),
@@ -133,8 +133,6 @@ def init_db():
         for nombre, datos in inventario_embebido.items():
             marca = datos[0].upper().strip()
             stock = datos[1]
-            
-            # Algoritmo de tasación comercial semanal según rendimiento
             precio_semanal_base = 45.00
             nombre_upper = nombre.upper()
             
@@ -142,7 +140,6 @@ def init_db():
                 precio_semanal_base += 55.00  
             elif any(k in nombre_upper for k in ["I7", "RYZEN 7", "PRECISION"]):
                 precio_semanal_base += 25.00   
-            
             if any(k in nombre_upper for k in ["24GB", "32GB", "64GB"]):
                 precio_semanal_base += 15.00   
             elif "8GB" in nombre_upper:
@@ -151,16 +148,14 @@ def init_db():
             equipos_procesados.append((nombre, marca, stock, stock, max(precio_semanal_base, 30.00)))
             
         try:
-            cursor.executemany("INSERT INTO equipos (nombre, marca, stock_total, stock_disponible, precio_alquiler) VALUES (?, ?, ?, ?, ?)", equipos_procesados)
+            cursor.executemany("INSERT INTO equipos (nombre, marca, stock_total, stock_disponible, precio_alquiler) VALUES (%s, %s, %s, %s, %s)", equipos_procesados)
             conn.commit()
-            print(f"[DATA-CORE] ✅ Auto-importación completada de forma segura. {len(equipos_procesados)} modelos indexados en SQLite.")
+            print(f"[DATA-CORE] ✅ Base de datos Postgres inicializada correctamente.")
         except Exception as e:
-            print(f"[DATA-CORE] ❌ Error en el parseo del diccionario nativo: {e}")
+            print(f"[DATA-CORE] ❌ Error inyectando datos: {e}")
             
     conn.close()
 
-# Inicialización forzosa al arranque
-init_db()
 
 # ==========================================
 # PLANTILLAS DE INTERFAZ GRÁFICA (UI SPA)
@@ -324,7 +319,7 @@ VISTA_DASHBOARD = """
             <div class="flex items-center justify-between w-full lg:w-auto">
                 <div class="flex items-center space-x-2">
                     <span class="text-lg font-black bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent tracking-wider">ERP MANAGEMENT</span>
-                    <span class="bg-slate-950 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-800 font-mono">CORE v5.0</span>
+                    <span class="bg-slate-950 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-800 font-mono">CLOUD DB v6.0</span>
                 </div>
                 <div class="text-xs text-slate-400 lg:hidden">
                     <a href="{{ url_for('logout') }}" class="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-2.5 py-1 rounded">Salir</a>
@@ -806,9 +801,9 @@ def index():
 def login():
     username = request.form['username']
     password = request.form['password']
-    conn = sqlite3.connect(DATABASE)
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, username, nombre FROM usuarios WHERE username=? AND password=?", (username, password))
+    cursor.execute("SELECT id, username, nombre FROM usuarios WHERE username=%s AND password=%s", (username, password))
     user = cursor.fetchone()
     conn.close()
     if user:
@@ -831,9 +826,9 @@ def registro():
         partes_nombre = nombre.lower().strip().split()
         username_generado = f"{partes_nombre[0]}.{partes_nombre[1]}" if len(partes_nombre) >= 2 else partes_nombre[0]
         
-        conn = sqlite3.connect(DATABASE)
+        conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id FROM usuarios WHERE username=? OR email=?", (username_generado, email))
+        cursor.execute("SELECT id FROM usuarios WHERE username=%s OR email=%s", (username_generado, email))
         if cursor.fetchone():
             conn.close()
             flash("El usuario o correo electrónico ya existen.")
@@ -857,17 +852,17 @@ def verificar_codigo():
         datos_temp = session['temp_registro']
         
         if codigo_ingresado in CREDENCIALES_VALIDAS:
-            conn = sqlite3.connect(DATABASE)
+            conn = get_db_connection()
             cursor = conn.cursor()
             try:
-                cursor.execute('INSERT INTO usuarios (username, password, nombre, email, telefono) VALUES (?, ?, ?, ?, ?)',
+                cursor.execute('INSERT INTO usuarios (username, password, nombre, email, telefono) VALUES (%s, %s, %s, %s, %s)',
                                (datos_temp['username'], datos_temp['password'], datos_temp['nombre'], datos_temp['email'], datos_temp['telefono']))
                 conn.commit()
                 conn.close()
                 u, p = datos_temp['username'], datos_temp['password']
                 session.pop('temp_registro', None)
                 return render_template_string(VISTA_EXITO, username=u, password=p)
-            except sqlite3.IntegrityError:
+            except IntegrityError:
                 conn.close()
                 flash("Error de duplicidad. Verifique sus datos.")
         else:
@@ -884,7 +879,7 @@ def dashboard():
     if 'usuario_id' not in session:
         return redirect(url_for('index'))
     
-    conn = sqlite3.connect(DATABASE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute("SELECT id, nombre, marca, stock_total, stock_disponible, precio_alquiler FROM equipos")
@@ -896,30 +891,31 @@ def dashboard():
     cursor.execute("SELECT t.id, e.nombre, t.cliente, t.telefono_cliente, t.fecha_inicio, t.fecha_fin, t.precio_total, 'Alquiler', t.activo, t.cantidad FROM transacciones t JOIN equipos e ON t.equipo_id = e.id ORDER BY t.id DESC")
     historial_completo = cursor.fetchall()
     
-    cursor.execute("SELECT nombre, email, telefono FROM usuarios WHERE id=?", (session['usuario_id'],))
+    cursor.execute("SELECT nombre, email, telefono FROM usuarios WHERE id=%s", (session['usuario_id'],))
     perfil = cursor.fetchone()
     perfil_dict = {'nombre': perfil[0], 'email': perfil[1], 'telefono': perfil[2]} if perfil else {'nombre': session['nombre'], 'email': '-', 'telefono': '-'}
 
     cursor.execute("SELECT COUNT(*), SUM(stock_disponible), SUM(stock_total) FROM equipos")
     res_eq = cursor.fetchone()
-    total_modelos = res_eq[0] or 0
-    stock_disp = res_eq[1] or 0
-    stock_total_corp = res_eq[2] or 0
+    
+    total_modelos = int(res_eq[0]) if res_eq[0] else 0
+    stock_disp = int(res_eq[1]) if res_eq[1] else 0
+    stock_total_corp = int(res_eq[2]) if res_eq[2] else 0
     stock_alqu = stock_total_corp - stock_disp
     
     tasa_ocupacion = (stock_alqu / stock_total_corp * 100) if stock_total_corp > 0 else 0.0
 
     cursor.execute("SELECT COUNT(*), SUM(precio_total), AVG(precio_total), COUNT(DISTINCT cliente) FROM transacciones")
     res_trans = cursor.fetchone()
-    total_transacciones = res_trans[0] or 0
-    ganancias_totales = res_trans[1] or 0.0
-    ticket_promedio = res_trans[2] or 0.0
-    clientes_unicos = res_trans[3] or 0
+    total_transacciones = int(res_trans[0]) if res_trans[0] else 0
+    ganancias_totales = float(res_trans[1]) if res_trans[1] else 0.0
+    ticket_promedio = float(res_trans[2]) if res_trans[2] else 0.0
+    clientes_unicos = int(res_trans[3]) if res_trans[3] else 0
 
     cursor.execute("SELECT cliente, SUM(precio_total) FROM transacciones GROUP BY cliente ORDER BY SUM(precio_total) DESC LIMIT 5")
     res_top = cursor.fetchall()
     top_clientes_labels = [r[0] for r in res_top] or ["Sin Transacciones"]
-    top_clientes_data = [r[1] for r in res_top] or [0]
+    top_clientes_data = [float(r[1]) for r in res_top] or [0]
 
     stats = {
         'total_modelos': total_modelos, 'unidades_disponibles': stock_disp, 'unidades_totales': stock_total_corp,
@@ -952,16 +948,16 @@ def procesar_salida():
         fecha_inicio = fecha_inicio_raw
         fecha_fin = fecha_fin_raw
     
-    conn = sqlite3.connect(DATABASE)
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT stock_disponible FROM equipos WHERE id=?", (equipo_id,))
+    cursor.execute("SELECT stock_disponible FROM equipos WHERE id=%s", (equipo_id,))
     stock_actual = cursor.fetchone()
     
     if stock_actual and stock_actual[0] >= cantidad:
-        cursor.execute("UPDATE equipos SET stock_disponible = stock_disponible - ? WHERE id=?", (cantidad, equipo_id))
+        cursor.execute("UPDATE equipos SET stock_disponible = stock_disponible - %s WHERE id=%s", (cantidad, equipo_id))
         cursor.execute('''
             INSERT INTO transacciones (equipo_id, cliente, telefono_cliente, fecha_inicio, fecha_fin, cantidad, precio_total, activo) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 1)
         ''', (equipo_id, cliente, telefono_cliente, fecha_inicio, fecha_fin, cantidad, precio))
         conn.commit()
         flash(f"Salida registrada: {cantidad} unidades arrendadas al cliente {cliente}.")
@@ -974,14 +970,14 @@ def procesar_salida():
 @app.route('/devolver/<int:transaccion_id>')
 def devolver(transaccion_id):
     if 'usuario_id' not in session: return redirect(url_for('index'))
-    conn = sqlite3.connect(DATABASE)
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT equipo_id, cantidad FROM transacciones WHERE id=?", (transaccion_id,))
+    cursor.execute("SELECT equipo_id, cantidad FROM transacciones WHERE id=%s", (transaccion_id,))
     res = cursor.fetchone()
     if res:
         eq_id, cant = res
-        cursor.execute("UPDATE transacciones SET activo = 0 WHERE id=?", (transaccion_id,))
-        cursor.execute("UPDATE equipos SET stock_disponible = stock_disponible + ? WHERE id=?", (cant, eq_id))
+        cursor.execute("UPDATE transacciones SET activo = 0 WHERE id=%s", (transaccion_id,))
+        cursor.execute("UPDATE equipos SET stock_disponible = stock_disponible + %s WHERE id=%s", (cant, eq_id))
         conn.commit()
         flash(f"Retorno confirmado. {cant} unidades reintegradas al inventario físico.")
     conn.close()
@@ -993,4 +989,6 @@ def logout():
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Inicializa la DB en PostgreSQL al arrancar el servidor
+    init_db()
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
