@@ -1,7 +1,9 @@
-from flask import Flask, render_template_string, request, redirect, url_for, session, flash
+from flask import Flask, render_template_string, request, redirect, url_for, session, flash, Response
 import psycopg2
 from psycopg2 import IntegrityError
 import os
+import io
+import csv
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -11,7 +13,7 @@ app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'clave_secreta_para_sesiones_erp_generico')
 
 # ==========================================
-# BLINDAJE ANTI-CACHÉ (Fuerza la sincronización real)
+# BLINDAJE ANTI-CACHÉ
 # ==========================================
 @app.after_request
 def add_header(response):
@@ -291,7 +293,7 @@ VISTA_DASHBOARD = """
             <div class="flex items-center justify-between w-full lg:w-auto">
                 <div class="flex items-center space-x-2">
                     <span class="text-lg font-black bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent tracking-wider">ERP MANAGEMENT</span>
-                    <span class="bg-slate-950 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-800 font-mono">CLOUD DB v7.0</span>
+                    <span class="bg-slate-950 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-800 font-mono">CLOUD DB v8.0</span>
                 </div>
                 <div class="text-xs text-slate-400 lg:hidden flex space-x-2">
                     <a href="{{ url_for('dashboard') }}" class="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-2.5 py-1 rounded">🔄 Sync</a>
@@ -358,6 +360,7 @@ VISTA_DASHBOARD = """
                             </div>
                             <div class="w-full sm:w-auto flex flex-col sm:flex-row gap-2">
                                 <button onclick="document.getElementById('modal-add').classList.remove('hidden')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold py-2 px-4 rounded-lg shadow-lg transition-all whitespace-nowrap">➕ Añadir Hardware</button>
+                                <a href="{{ url_for('exportar_inventario') }}" class="bg-amber-500 hover:bg-amber-400 text-white text-[11px] font-bold py-2 px-4 rounded-lg shadow-lg transition-all whitespace-nowrap text-center">📥 Exportar Excel</a>
                                 <input type="text" id="inputBuscar" onkeyup="buscarEquipo()" placeholder="Buscar equipo..." class="px-4 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500 w-full">
                             </div>
                         </div>
@@ -953,8 +956,34 @@ def dashboard():
     return render_template_string(VISTA_DASHBOARD, equipos=equipos, transacciones_activas=transacciones_activas, historial_completo=historial_completo, perfil=perfil_dict, stats=stats, graph_data=graph_data)
 
 # -------------------------------------------------------------
-# NUEVAS RUTAS: AÑADIR Y ELIMINAR EQUIPO MANUALMENTE
+# NUEVA RUTA: DESCARGAR INVENTARIO EN EXCEL (CSV UTF-8)
 # -------------------------------------------------------------
+@app.route('/exportar-inventario')
+def exportar_inventario():
+    if 'usuario_id' not in session: 
+        return redirect(url_for('index'))
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT nombre, marca, stock_total, stock_disponible, precio_alquiler FROM equipos ORDER BY marca, nombre")
+    equipos = cursor.fetchall()
+    conn.close()
+    
+    output = io.StringIO()
+    output.write('\ufeff')
+    writer = csv.writer(output, delimiter=';')
+    writer.writerow(['Especificaciones Tecnicas', 'Marca', 'Stock Empresa', 'Stock en Almacen', 'Tarifa Semanal (S/.)'])
+    
+    for eq in equipos:
+        writer.writerow([eq[0], eq[1], eq[2], eq[3], f"{eq[4]:.2f}"])
+        
+    fecha_hoy = datetime.now().strftime("%d-%m-%Y")
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment;filename=Inventario_ERP_{fecha_hoy}.csv"}
+    )
+
 @app.route('/agregar-equipo', methods=['POST'])
 def agregar_equipo():
     if 'usuario_id' not in session: return redirect(url_for('index'))
@@ -991,8 +1020,6 @@ def eliminar_equipo(equipo_id):
     finally:
         conn.close()
     return redirect(url_for('dashboard'))
-
-# -------------------------------------------------------------
 
 @app.route('/procesar-salida', methods=['POST'])
 def procesar_salida():
