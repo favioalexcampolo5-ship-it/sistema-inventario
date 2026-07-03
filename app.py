@@ -10,6 +10,16 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'clave_secreta_para_sesiones_erp_generico')
 
+# ==========================================
+# BLINDAJE ANTI-CACHÉ (Fuerza la sincronización real)
+# ==========================================
+@app.after_request
+def add_header(response):
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '-1'
+    return response
+
 # Lista de códigos de credenciales de trabajadores autorizados
 CREDENCIALES_VALIDAS = [
     "223476", "115982", "334812", "449201", "556172",
@@ -17,7 +27,6 @@ CREDENCIALES_VALIDAS = [
     "654321", "789123", "456789", "987654", "246810" 
 ]
 
-# Obtener URL de conexión a la base de datos de Render
 DB_URL = os.getenv('DATABASE_URL')
 if DB_URL and DB_URL.startswith("postgres://"):
     DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
@@ -26,7 +35,7 @@ def get_db_connection():
     return psycopg2.connect(DB_URL)
 
 # ==========================================
-# ESTRUCTURA DE BASE DE DATOS Y CATÁLOGO EMBEBIDO (POSTGRESQL)
+# ESTRUCTURA DE BASE DE DATOS Y CATÁLOGO
 # ==========================================
 def init_db():
     conn = get_db_connection()
@@ -79,53 +88,18 @@ def init_db():
         
         inventario_embebido = {
             "DELL Latitude 3420 | Core i5-1135G7 | 8GB": ("DELL", 1),
-            "DELL Latitude 3420 (A0247) | Core i5-1135G7 | 16GB": ("DELL", 1),
-            "DELL Latitude 3420 (A0248) | Core i5-1135G7 | 16GB": ("DELL", 1),
             "DELL Latitude 3520 | Core i7-1165G7 | 24GB": ("DELL", 20),
             "DELL Latitude 3520 | Core i7-1165G7 | 8GB": ("DELL", 59),
-            "DELL Latitude 5420 | Core i5-1135G7 | 16GB": ("DELL", 1),
-            "DELL Latitude 5520 | Core i7-1185G7 | 16GB": ("DELL", 2),
-            "DELL Latutude 3420 | Core i5-1135G7 | 16GB": ("DELL", 1),
-            "DELL Precision 3551 (A0315) | Core i7-10850H | 32GB": ("DELL", 1),
-            "DELL ThinkPad L15 Gen2 | Core i5-1135G7 | 16GB": ("DELL", 1),
-            "DELL Vostro 3400 | Core i5-1135G7 | 16GB": ("DELL", 1),
-            "HP 250 G10 | Core i7-1355U | 16GB": ("HP", 1),
             "HP 250 G9 | Core i7-1255U | 16GB": ("HP", 44),
             "HP 348 G7 | Core i7-10510U | 16GB": ("HP", 25),
             "HP Victus 15-fa0007la | Core i5-12450H | 16GB": ("HP", 6),
-            "HP Victus 16-d1007la | Core i5-12500H | 16GB": ("HP", 1),
-            "HP ZBook Power 15.6 Inch G9 | Core i7-12700H | 32GB": ("HP", 1),
-            "HP Zbook Firefly 14 G8 | Core i7-1165G7 | 16GB": ("HP", 1),
-            "LENOVO IdeaPad 5 14IIL05 | Core i5-1035G1 | 8GB": ("LENOVO", 1),
-            "LENOVO IdeaPad Gaming 3 15IHU6 | Core i5-11300H | 16GB": ("LENOVO", 2),
             "LENOVO LOQ 15IAX9 | Core i5-12450HX | 16GB": ("LENOVO", 14),
             "LENOVO LOQ 15IRH8 | Core i5-13420H | 16GB": ("LENOVO", 23),
             "LENOVO LOQ 15IRX9 | Core i5-12450HX | 16GB": ("LENOVO", 25),
             "LENOVO ThinkBook 14-IML | Core i5-10210U | 8GB": ("LENOVO", 10),
-            "LENOVO ThinkBook 15 G2 ITL | Core i5-1135G7 | 8GB": ("LENOVO", 3),
-            "LENOVO ThinkPad E14 Gen 2 | Core i7-1165G7 | 8GB": ("LENOVO", 7),
             "LENOVO ThinkPad E14 Gen2 | Core i5-1135G7 | 16GB": ("LENOVO", 32),
-            "LENOVO ThinkPad E15 | Core i7-10510U | 16GB": ("LENOVO", 1),
-            "LENOVO ThinkPad E15 (A0244) | Core i7-10510U | 16GB": ("LENOVO", 1),
-            "LENOVO ThinkPad E15 (A0256) | Core i7-10510U | 16GB": ("LENOVO", 1),
-            "LENOVO ThinkPad E15 Gen2 | Core i5-1135G7 | 16GB": ("LENOVO", 1),
             "LENOVO ThinkPad L14 Gen 2 | Core i5-1135G7 | 16GB": ("LENOVO", 12),
-            "LENOVO ThinkPad L14 Gen2 | Core i5-1135G7 | 16GB": ("LENOVO", 1),
-            "LENOVO ThinkPad L15 Gen1 | Core i5-10210U | 16GB": ("LENOVO", 12),
-            "LENOVO ThinkPad L15 Gen2 | Core i5-1135G7 | 16GB": ("LENOVO", 3),
-            "LENOVO ThinkPad L490 | Core i5-8265U | 16GB": ("LENOVO", 1),
-            "LENOVO ThinkPad L580 | Core i5-8250U | 8GB": ("LENOVO", 1),
-            "LENOVO ThinkPad P14s Gen4 | Core i7-1360P | 16GB": ("LENOVO", 1),
-            "LENOVO ThinkPad T14s Gen2 | Core i5-1135G7 | 16GB": ("LENOVO", 1),
-            "LENOVO ThinkPad T15 Gen1 | Core i5-10210U | 8GB": ("LENOVO", 1),
-            "LENOVO ThinkPad X1 Carbon Gen 9 | Core i7-1165G7 | 16GB": ("LENOVO", 1),
-            "LENOVO Thinkbook 15-IML | Core i5-10210U | 8GB": ("LENOVO", 1),
-            "LENOVO ThnikPad L15 (A0258) | Core i5-10210U | 16GB": ("LENOVO", 1),
-            "LENOVO ThnikPad L15 (A0259) | Core i5-10210U | 16GB": ("LENOVO", 1),
-            "LENOVO V14-IIL | Core i5-1035G1 | 8GB": ("LENOVO", 6),
-            "LENOVO V15-IIL | Core i5-1035G1 | 8GB": ("LENOVO", 6),
-            "LENOVO V15-ILL | Core i5-1035G1 | 8GB": ("LENOVO", 7),
-            "Lenovo ThinkBook 15 G2 ITL | Core i5-1135G7 | 8GB": ("LENOVO", 3)
+            "LENOVO V15-ILL | Core i5-1035G1 | 8GB": ("LENOVO", 7)
         }
         
         equipos_procesados = []
@@ -155,9 +129,8 @@ def init_db():
             
     conn.close()
 
-
 # ==========================================
-# PLANTILLAS DE INTERFAZ GRÁFICA (UI SPA)
+# PLANTILLAS HTML
 # ==========================================
 
 VISTA_LOGIN = """
@@ -274,7 +247,7 @@ VISTA_EXITO = """
 <body class="bg-slate-900 flex items-center justify-center h-screen px-4">
     <div class="bg-slate-800 p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-md border border-slate-700 text-center space-y-6">
         <div class="inline-flex p-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full">
-            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19", 7></path></svg>
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
         </div>
         <div>
             <h1 class="text-xl font-bold text-white">¡Operador Registrado!</h1>
@@ -318,9 +291,10 @@ VISTA_DASHBOARD = """
             <div class="flex items-center justify-between w-full lg:w-auto">
                 <div class="flex items-center space-x-2">
                     <span class="text-lg font-black bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent tracking-wider">ERP MANAGEMENT</span>
-                    <span class="bg-slate-950 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-800 font-mono">CLOUD DB v6.0</span>
+                    <span class="bg-slate-950 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-800 font-mono">CLOUD DB v7.0</span>
                 </div>
-                <div class="text-xs text-slate-400 lg:hidden">
+                <div class="text-xs text-slate-400 lg:hidden flex space-x-2">
+                    <a href="{{ url_for('dashboard') }}" class="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-2.5 py-1 rounded">🔄 Sync</a>
                     <a href="{{ url_for('logout') }}" class="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-2.5 py-1 rounded">Salir</a>
                 </div>
             </div>
@@ -332,15 +306,22 @@ VISTA_DASHBOARD = """
                 <button onclick="showSection('sec-perfil')" id="btn-sec-perfil" class="tab-btn flex-shrink-0 px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-bold rounded-md transition-all text-slate-400 hover:text-slate-200">👤 Perfil</button>
             </nav>
 
-            <div class="text-xs text-slate-400 hidden lg:block">
-                Operador: <span class="text-slate-200 font-semibold mr-3">{{ session['nombre'] }}</span>
-                <a href="{{ url_for('logout') }}" class="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-2.5 py-1 rounded hover:bg-rose-600 hover:text-white transition-all">Salir</a>
+            <div class="text-xs text-slate-400 hidden lg:flex items-center space-x-4">
+                <span>Operador: <strong class="text-slate-200">{{ session['nombre'] }}</strong></span>
+                <a href="{{ url_for('dashboard') }}" class="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-3 py-1.5 rounded hover:bg-indigo-600 hover:text-white transition-all font-bold">🔄 Sincronizar Datos</a>
+                <a href="{{ url_for('logout') }}" class="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-3 py-1.5 rounded hover:bg-rose-600 hover:text-white transition-all font-bold">Salir</a>
             </div>
         </div>
     </header>
 
     <main class="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
         
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="bg-indigo-500/20 border border-indigo-500 text-indigo-200 p-4 rounded-xl text-sm font-semibold shadow-lg text-center">{{ messages[0] }}</div>
+            {% endif %}
+        {% endwith %}
+
         <div id="sec-inventario" class="section-container space-y-6">
             
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -375,9 +356,9 @@ VISTA_DASHBOARD = """
                                     <span class="bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 px-2 py-1 rounded">HP TECH</span>
                                 </div>
                             </div>
-                            <div class="w-full sm:w-auto">
-                                <p class="text-[10px] text-slate-400 mb-1">💡 Click en una fila para seleccionarla</p>
-                                <input type="text" id="inputBuscar" onkeyup="buscarEquipo()" placeholder="Buscar equipo..." class="px-4 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500 w-full sm:w-64">
+                            <div class="w-full sm:w-auto flex flex-col sm:flex-row gap-2">
+                                <button onclick="document.getElementById('modal-add').classList.remove('hidden')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold py-2 px-4 rounded-lg shadow-lg transition-all whitespace-nowrap">➕ Añadir Hardware</button>
+                                <input type="text" id="inputBuscar" onkeyup="buscarEquipo()" placeholder="Buscar equipo..." class="px-4 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500 w-full">
                             </div>
                         </div>
                         
@@ -387,31 +368,37 @@ VISTA_DASHBOARD = """
                                     <tr>
                                         <th class="py-3 px-4 min-w-[220px]">Especificaciones Técnicas</th>
                                         <th class="py-3 px-4 text-center">Identidad</th>
-                                        <th class="py-3 px-4 text-center">Disponibilidad</th>
-                                        <th class="py-3 px-4 text-right">Tarifa Semanal</th>
+                                        <th class="py-3 px-4 text-center">Disp.</th>
+                                        <th class="py-3 px-4 text-right">Tarifa (Sem)</th>
+                                        <th class="py-3 px-4 text-center">Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-800/50">
                                     {% for eq in equipos %}
                                     <tr onclick="autoSeleccionarEquipo('{{ eq[0] }}', '{{ eq[5] }}', '{{ eq[4] }}')" class="hover:bg-slate-800/50 transition-colors cursor-pointer group">
-                                        <td class="py-3 px-4 font-semibold text-slate-300 group-hover:text-indigo-400 text-[11px] max-w-[260px] md:max-w-none md:whitespace-normal truncate" title="{{ eq[1] }}">{{ eq[1] }}</td>
+                                        <td class="py-3 px-4 font-semibold text-slate-300 group-hover:text-indigo-400 text-[11px] max-w-[220px] md:max-w-none md:whitespace-normal truncate" title="{{ eq[1] }}">{{ eq[1] }}</td>
                                         <td class="py-3 px-4 text-center">
                                             {% if eq[2] == 'DELL' %}
                                                 <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 border border-sky-500/20 text-sky-400">DELL</span>
                                             {% elif eq[2] == 'LENOVO' %}
                                                 <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/10 border border-purple-500/20 text-purple-400">LENOVO</span>
                                             {% else %}
-                                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">HP</span>
+                                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">{{ eq[2] }}</span>
                                             {% endif %}
                                         </td>
                                         <td class="py-3 px-4 text-center font-mono font-bold whitespace-nowrap">
                                             {% if eq[4] > 0 %}
-                                                <span class="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">{{ eq[4] }} / {{ eq[3] }} uds</span>
+                                                <span class="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">{{ eq[4] }} / {{ eq[3] }}</span>
                                             {% else %}
                                                 <span class="text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded">Agotado</span>
                                             {% endif %}
                                         </td>
                                         <td class="py-3 px-4 text-right font-bold text-indigo-400 font-mono whitespace-nowrap">S/. {{ "%.2f"|format(eq[5]) }}</td>
+                                        <td class="py-3 px-4 text-center">
+                                            <form action="{{ url_for('eliminar_equipo', equipo_id=eq[0]) }}" method="POST" onsubmit="return confirm('¿Seguro que deseas eliminar este equipo del catálogo?');">
+                                                <button type="submit" onclick="event.stopPropagation()" class="text-rose-400 hover:text-white hover:bg-rose-600 font-bold bg-rose-500/10 px-2 py-1.5 rounded text-[10px] transition-all">Eliminar</button>
+                                            </form>
+                                        </td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -614,6 +601,42 @@ VISTA_DASHBOARD = """
         </div>
 
     </main>
+
+    <div id="modal-add" class="hidden fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center px-4 backdrop-blur-sm">
+        <div class="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md p-6 shadow-2xl">
+            <h3 class="text-white font-bold text-lg mb-1">➕ Añadir Nuevo Hardware</h3>
+            <p class="text-slate-400 text-[11px] mb-5">Ingresa los datos técnicos y comerciales del equipo.</p>
+            <form action="{{ url_for('agregar_equipo') }}" method="POST" class="space-y-4 text-xs">
+                <div>
+                    <label class="block text-slate-400 mb-1 font-semibold uppercase tracking-wider">Especificaciones Técnicas</label>
+                    <input type="text" name="especificaciones" required placeholder="Ej: LENOVO ThinkPad T14 | Core i7 | 16GB" class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white focus:border-indigo-500">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-slate-400 mb-1 font-semibold uppercase tracking-wider">Marca</label>
+                        <select name="marca" required class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white focus:border-indigo-500">
+                            <option value="DELL">DELL</option>
+                            <option value="LENOVO">LENOVO</option>
+                            <option value="HP">HP</option>
+                            <option value="OTRA">OTRA MARCA</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1 font-semibold uppercase tracking-wider">Stock Inicial</label>
+                        <input type="number" name="stock" min="1" required placeholder="Ej: 5" class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-center focus:border-indigo-500">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-slate-400 mb-1 font-semibold uppercase tracking-wider">Tarifa Semanal (S/.)</label>
+                    <input type="number" step="0.01" name="precio" min="1" required placeholder="45.00" class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-indigo-400 font-mono font-bold focus:border-indigo-500">
+                </div>
+                <div class="flex space-x-3 mt-6 pt-4 border-t border-slate-800">
+                    <button type="button" onclick="document.getElementById('modal-add').classList.add('hidden')" class="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg transition-all">Cancelar</button>
+                    <button type="submit" class="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-all shadow-lg">Guardar Equipo</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <script>
     let tarifaSugeridaGlobal = 0.0;
@@ -881,7 +904,7 @@ def dashboard():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT id, nombre, marca, stock_total, stock_disponible, precio_alquiler FROM equipos")
+    cursor.execute("SELECT id, nombre, marca, stock_total, stock_disponible, precio_alquiler FROM equipos ORDER BY marca, nombre")
     equipos = cursor.fetchall()
     
     cursor.execute("SELECT t.id, e.nombre, t.cliente, t.fecha_inicio, t.fecha_fin, t.precio_total, t.cantidad FROM transacciones t JOIN equipos e ON t.equipo_id = e.id WHERE t.activo = 1")
@@ -928,6 +951,48 @@ def dashboard():
     
     conn.close()
     return render_template_string(VISTA_DASHBOARD, equipos=equipos, transacciones_activas=transacciones_activas, historial_completo=historial_completo, perfil=perfil_dict, stats=stats, graph_data=graph_data)
+
+# -------------------------------------------------------------
+# NUEVAS RUTAS: AÑADIR Y ELIMINAR EQUIPO MANUALMENTE
+# -------------------------------------------------------------
+@app.route('/agregar-equipo', methods=['POST'])
+def agregar_equipo():
+    if 'usuario_id' not in session: return redirect(url_for('index'))
+    especificaciones = request.form['especificaciones']
+    marca = request.form['marca']
+    stock = int(request.form['stock'])
+    precio = float(request.form['precio'])
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT INTO equipos (nombre, marca, stock_total, stock_disponible, precio_alquiler) VALUES (%s, %s, %s, %s, %s)",
+                       (especificaciones, marca.upper(), stock, stock, precio))
+        conn.commit()
+        flash("✅ Nuevo equipo añadido al inventario exitosamente.")
+    except Exception as e:
+        flash(f"❌ Error al añadir equipo: {e}")
+    finally:
+        conn.close()
+    return redirect(url_for('dashboard'))
+
+@app.route('/eliminar-equipo/<int:equipo_id>', methods=['POST'])
+def eliminar_equipo(equipo_id):
+    if 'usuario_id' not in session: return redirect(url_for('index'))
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM equipos WHERE id=%s", (equipo_id,))
+        conn.commit()
+        flash("🗑️ Equipo eliminado del catálogo correctamente.")
+    except IntegrityError:
+        conn.rollback()
+        flash("⚠️ No puedes eliminar este equipo porque tiene un historial de alquileres. Por auditoría, debe mantenerse en el sistema.")
+    finally:
+        conn.close()
+    return redirect(url_for('dashboard'))
+
+# -------------------------------------------------------------
 
 @app.route('/procesar-salida', methods=['POST'])
 def procesar_salida():
@@ -987,9 +1052,6 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-# -------------------------------------------------------------
-# LLAMADA DE CONEXIÓN GLOBAL (Indispensable para Gunicorn en Render)
-# -------------------------------------------------------------
 try:
     init_db()
 except Exception as e:
