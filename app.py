@@ -300,7 +300,7 @@ VISTA_DASHBOARD = """
             <div class="flex items-center justify-between w-full lg:w-auto">
                 <div class="flex items-center space-x-2">
                     <span class="text-lg font-black bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent tracking-wider">ERP MANAGEMENT</span>
-                    <span class="bg-slate-950 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-800 font-mono">CLOUD DB v10.0</span>
+                    <span class="bg-slate-950 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-800 font-mono">CLOUD DB v11.0</span>
                 </div>
                 <div class="text-xs text-slate-400 lg:hidden flex space-x-2">
                     <a href="{{ url_for('dashboard') }}" class="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-2.5 py-1 rounded">🔄 Sync</a>
@@ -325,6 +325,7 @@ VISTA_DASHBOARD = """
 
     <main class="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
         
+        <!-- ALERTAS DE DEVOLUCIÓN -->
         {% if alertas_devolucion %}
         <div class="space-y-2">
             {% for alerta in alertas_devolucion %}
@@ -339,12 +340,16 @@ VISTA_DASHBOARD = """
         </div>
         {% endif %}
         
+        <!-- ALERTAS FLASH GLOBALES -->
         {% with messages = get_flashed_messages() %}
             {% if messages %}
                 <div class="bg-indigo-500/20 border border-indigo-500 text-indigo-200 p-4 rounded-xl text-sm font-semibold shadow-lg text-center">{{ messages[0] }}</div>
             {% endif %}
         {% endwith %}
 
+        <!-- ==============================
+        SECCIÓN 1: INVENTARIO Y ALQUILERES
+        =============================== -->
         <div id="sec-inventario" class="section-container space-y-6">
             
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -441,7 +446,7 @@ VISTA_DASHBOARD = """
                                         <td class="py-3.5 px-4 text-center flex justify-center space-x-2 whitespace-nowrap">
                                             <a href="{{ url_for('descargar_pdf', t_id=alq[0]) }}" target="_blank" class="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-2 py-1 rounded font-bold hover:bg-indigo-600 hover:text-white transition-all text-[11px]" title="Generar PDF">📄 PDF</a>
                                             <button onclick="abrirModalEdicionUnidades('{{ alq[0] }}', '{{ alq[2] }}', '{{ alq[6] }}', '{{ alq[1] }}')" class="bg-sky-500/10 border border-sky-500/20 text-sky-400 px-2 py-1 rounded font-bold hover:bg-sky-600 hover:text-white transition-all text-[11px]">Editar</button>
-                                            <a href="{{ url_for('devolver', transaccion_id=alq[0]) }}" class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-1 rounded font-bold hover:bg-emerald-50 hover:text-white transition-all text-[11px]">Retorno</a>
+                                            <a href="{{ url_for('devolver', transaccion_id=alq[0]) }}" class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-1 rounded font-bold hover:bg-emerald-500 hover:text-white transition-all text-[11px]">Retorno</a>
                                         </td>
                                     </tr>
                                     {% else %}
@@ -453,6 +458,7 @@ VISTA_DASHBOARD = """
                     </div>
                 </div>
 
+                <!-- PANEL FLOTANTE LATERAL -->
                 <div class="space-y-6">
                     <div id="panel-opciones-equipo" class="bg-slate-900 border-2 border-dashed border-slate-800 p-5 rounded-xl text-center text-slate-500 text-xs flex flex-col justify-center h-48">
                         <span>💡 Haz clic en cualquier fila de la lista del inventario para ver las especificaciones técnicas completas y activar sus acciones comerciales o de soporte técnico.</span>
@@ -470,26 +476,53 @@ VISTA_DASHBOARD = """
                             <button id="tab-btn-soporte" onclick="cambiarPestana('soporte')" class="w-1/3 pb-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200">🛠️ Soporte</button>
                         </div>
 
-                        <div id="tab-content-specs" class="space-y-3">
+                        <!-- TAB: ESPECIFICACIONES (NUEVO DISEÑO E-COMMERCE) -->
+                        <div id="tab-content-specs" class="space-y-4">
                             <div>
-                                <span class="text-slate-400 block font-semibold text-[10px] uppercase">Ficha Técnica Base</span>
-                                <p class="text-white font-bold text-sm" id="info-txt-nombre"></p>
+                                <h3 class="text-white font-black text-base leading-tight" id="ecommerce-nombre">Nombre Equipo</h3>
+                                <p class="text-slate-400 text-[10px] mt-1" id="ecommerce-desc">Descripción comercial dinámica generada automáticamente.</p>
                             </div>
-                            <div class="grid grid-cols-2 gap-2 bg-slate-950 p-3 rounded-lg border border-slate-800">
+                            
+                            <div class="grid grid-cols-2 gap-y-3 gap-x-2 bg-slate-950 p-3 rounded-lg border border-slate-800 text-[10px]">
                                 <div>
-                                    <span class="text-slate-400 block text-[9px] uppercase font-bold">Precio Alquiler</span>
-                                    <span class="text-cyan-400 font-black text-sm font-mono" id="info-txt-precio-renta"></span>
+                                    <span class="text-slate-500 block uppercase font-bold text-[9px]">Procesador</span>
+                                    <span class="text-slate-200 font-semibold" id="ecommerce-cpu">---</span>
                                 </div>
                                 <div>
-                                    <span class="text-slate-400 block text-[9px] uppercase font-bold">Valor de Mercado</span>
-                                    <span class="text-amber-400 font-black text-sm font-mono" id="info-txt-precio-real"></span>
+                                    <span class="text-slate-500 block uppercase font-bold text-[9px]">Memoria RAM</span>
+                                    <span class="text-slate-200 font-semibold" id="ecommerce-ram">---</span>
+                                </div>
+                                <div>
+                                    <span class="text-slate-500 block uppercase font-bold text-[9px]">Almacenamiento</span>
+                                    <span class="text-slate-200 font-semibold" id="ecommerce-disco">---</span>
+                                </div>
+                                <div>
+                                    <span class="text-slate-500 block uppercase font-bold text-[9px]">Tarjeta Gráfica</span>
+                                    <span class="text-slate-200 font-semibold" id="ecommerce-gpu">---</span>
+                                </div>
+                                <div>
+                                    <span class="text-slate-500 block uppercase font-bold text-[9px]">Pantalla</span>
+                                    <span class="text-slate-200 font-semibold" id="ecommerce-pantalla">---</span>
+                                </div>
+                                <div>
+                                    <span class="text-slate-500 block uppercase font-bold text-[9px]">Sistema Operativo</span>
+                                    <span class="text-slate-200 font-semibold" id="ecommerce-os">---</span>
                                 </div>
                             </div>
-                            <div class="bg-indigo-950/20 border border-indigo-900/40 p-2.5 rounded-lg text-indigo-300 text-[11px]">
-                                ℹ️ <strong>Auditoría de Activos:</strong> El valor estimado del equipo en el mercado permite calcular el retorno de inversión corporativo (ROI).
+
+                            <div class="flex justify-between items-center pt-2 border-t border-slate-800">
+                                <div>
+                                    <span class="text-slate-500 block uppercase font-bold text-[9px]">Tarifa Semanal</span>
+                                    <span class="text-cyan-400 font-black text-lg font-mono leading-none" id="info-txt-precio-renta"></span>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-slate-500 block uppercase font-bold text-[9px]">Valor Comercial</span>
+                                    <span class="text-amber-500 font-black text-sm font-mono line-through" id="info-txt-precio-real"></span>
+                                </div>
                             </div>
                         </div>
 
+                        <!-- TAB: FORMULARIO ALQUILER -->
                         <div id="tab-content-renta" class="hidden">
                             <form action="{{ url_for('procesar_salida') }}" method="POST" class="space-y-3">
                                 <input type="hidden" name="equipo_id" id="form-action-id">
@@ -527,6 +560,7 @@ VISTA_DASHBOARD = """
                             </form>
                         </div>
 
+                        <!-- TAB: MANTENIMIENTO TÉCNICO -->
                         <div id="tab-content-soporte" class="hidden py-4 text-center">
                             <span class="text-3xl block mb-2">🛠️</span>
                             <h4 class="text-white font-bold text-sm mb-1">Módulo de Revisión Técnica</h4>
@@ -548,6 +582,9 @@ VISTA_DASHBOARD = """
             </div>
         </div>
 
+        <!-- ==============================
+        SECCIÓN 2: LABORATORIO Y MANTENIMIENTO
+        =============================== -->
         <div id="sec-mantenimiento" class="section-container hidden space-y-6">
             <div class="bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-800">
                 <h2 class="text-base sm:text-lg font-bold text-white mb-1">🛠️ Laboratorio y Mantenimiento Técnico</h2>
@@ -587,6 +624,9 @@ VISTA_DASHBOARD = """
             </div>
         </div>
 
+        <!-- ==============================
+        SECCIÓN 3: BI ESTADÍSTICAS
+        =============================== -->
         <div id="sec-analytics" class="section-container hidden space-y-6">
             <div class="bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-800">
                 <h2 class="text-base sm:text-lg font-bold text-white mb-1">📊 Inteligencia de Negocios (Business Intelligence)</h2>
@@ -622,6 +662,9 @@ VISTA_DASHBOARD = """
             </div>
         </div>
 
+        <!-- ==============================
+        SECCIÓN 4: CRM HISTORIAL
+        =============================== -->
         <div id="sec-clientes" class="section-container hidden space-y-6">
             <div class="bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-800">
                 <h2 class="text-base sm:text-lg font-bold text-white mb-1">👥 Módulo CRM - Base de Datos Transaccional</h2>
@@ -675,6 +718,9 @@ VISTA_DASHBOARD = """
 
     </main>
 
+    <!-- ==========================================
+    MODALES FLOTANTES
+    =========================================== -->
     <div id="modal-edit-unidades" class="hidden fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center px-4 backdrop-blur-sm">
         <div class="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-sm p-6 shadow-2xl">
             <h3 class="text-white font-bold text-base mb-1">📝 Modificar Unidades del Contrato</h3>
@@ -740,7 +786,7 @@ VISTA_DASHBOARD = """
             <form action="{{ url_for('agregar_equipo') }}" method="POST" class="space-y-4 text-xs mt-4">
                 <div>
                     <label class="block text-slate-400 mb-1 font-semibold uppercase tracking-wider">Especificaciones Técnicas</label>
-                    <input type="text" name="especificaciones" required class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white">
+                    <input type="text" name="especificaciones" required class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white" placeholder="Ej: LENOVO ThinkPad T14 | Core i7 | 16GB">
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
@@ -766,6 +812,9 @@ VISTA_DASHBOARD = """
         </div>
     </div>
 
+    <!-- ==========================================
+    JAVASCRIPT FRONTEND (EXTRACTOR DE SPECS)
+    =========================================== -->
     <script>
     let activeTarifaSugerida = 0.0;
 
@@ -780,16 +829,59 @@ VISTA_DASHBOARD = """
         document.getElementById('btn-' + sectionId).classList.add('bg-indigo-600', 'text-white');
     }
 
+    // MOTOR DE EXTRACCIÓN Y DEDUCCIÓN DE CARACTERÍSTICAS
+    function generarSpecs(nombreCompleto) {
+        let partes = nombreCompleto.split('|').map(p => p.trim());
+        let modelo = partes[0] || nombreCompleto;
+        let cpu = partes[1] || 'Intel / AMD de última generación';
+        let ram = partes[2] || 'Capacidad Estándar';
+
+        let strUpper = nombreCompleto.toUpperCase();
+        let esGamer = strUpper.includes('LOQ') || strUpper.includes('VICTUS') || strUpper.includes('GAMING');
+        let esWorkstation = strUpper.includes('ZBOOK') || strUpper.includes('PRECISION') || strUpper.includes('LATITUDE 5') || strUpper.includes('THINKPAD P');
+        let esAltaGama = strUpper.includes('I7') || strUpper.includes('I9') || strUpper.includes('RYZEN 7');
+
+        let gpu = esGamer ? 'NVIDIA GeForce RTX Dedicada' : (esWorkstation ? 'NVIDIA RTX Profesional' : 'Gráficos Integrados Intel Iris Xe / AMD Radeon');
+        let disco = (strUpper.includes('32GB') || strUpper.includes('64GB')) ? '1TB SSD M.2 NVMe' : '512GB SSD M.2 PCIe';
+        let pantalla = (strUpper.includes(' 14') || strUpper.includes('14-')) ? '14.0" FHD (1920x1080) IPS Anti-reflejo' : '15.6" FHD (1920x1080) IPS Anti-reflejo';
+        let os = 'Windows 11 Pro 64-bit Empresarial';
+
+        let desc = "";
+        if (esGamer) {
+            desc = `El modelo ${modelo} es un equipo diseñado para máxima potencia. Equipado con procesador ${cpu} y ${ram} de memoria, garantiza fluidez en diseño 3D, arquitectura y cargas de trabajo extremas gracias a su sistema térmico avanzado.`;
+        } else if (esWorkstation) {
+            desc = `Estación de trabajo móvil ${modelo}. Diseñada específicamente para ingeniería, CAD y análisis de datos pesados. Su configuración con ${cpu} ofrece fiabilidad de grado corporativo y durabilidad extrema.`;
+        } else if (esAltaGama) {
+            desc = `Laptop premium ${modelo}, ideal para ejecutivos, programadores y multitarea pesada. La combinación de su procesador ${cpu} y ${ram} asegura un flujo de trabajo ininterrumpido en entornos empresariales.`;
+        } else {
+            desc = `Equipo corporativo ágil y eficiente. El ${modelo} cuenta con ${cpu} y ${ram}, ofreciendo el equilibrio perfecto entre portabilidad, autonomía de batería y productividad constante para el día a día.`;
+        }
+
+        return { modelo, cpu, ram, gpu, disco, pantalla, os, desc };
+    }
+
     function abrirModuloEquipo(id, nombre, marca, stockDisp, stockTot, precioRenta, precioReal) {
         document.getElementById('panel-opciones-equipo').classList.add('hidden');
         const modulo = document.getElementById('modulo-activo-equipo');
         modulo.classList.remove('hidden');
 
         document.getElementById('info-badge-marca').innerText = marca;
-        document.getElementById('info-txt-nombre').innerText = nombre;
+        
+        // Inyectar E-commerce Specs
+        let specs = generarSpecs(nombre);
+        document.getElementById('ecommerce-nombre').innerText = specs.modelo;
+        document.getElementById('ecommerce-desc').innerText = specs.desc;
+        document.getElementById('ecommerce-cpu').innerText = specs.cpu;
+        document.getElementById('ecommerce-ram').innerText = specs.ram;
+        document.getElementById('ecommerce-disco').innerText = specs.disco;
+        document.getElementById('ecommerce-gpu').innerText = specs.gpu;
+        document.getElementById('ecommerce-pantalla').innerText = specs.pantalla;
+        document.getElementById('ecommerce-os').innerText = specs.os;
+
         document.getElementById('info-txt-precio-renta').innerText = 'S/. ' + parseFloat(precioRenta).toFixed(2);
         document.getElementById('info-txt-precio-real').innerText = 'S/. ' + parseFloat(precioReal).toFixed(2);
 
+        // Formularios ocultos
         document.getElementById('form-action-id').value = id;
         document.getElementById('form-soporte-id').value = id;
         document.getElementById('form-action-stock-label').innerText = stockDisp + ' / ' + stockTot + ' uds.';
@@ -1052,7 +1144,6 @@ def descargar_pdf(t_id):
     pdf = FPDF()
     pdf.add_page()
     
-    # Membrete Empresarial 
     pdf.set_font('Arial', 'B', 16)
     pdf.set_text_color(50, 50, 120)
     pdf.cell(0, 10, txt="SISTEMA ERP - DIVISION DE ACTIVOS TECNOLOGICOS", ln=True, align='C')
@@ -1061,7 +1152,6 @@ def descargar_pdf(t_id):
     pdf.cell(0, 10, txt="CONTRATO OFICIAL DE ARRENDAMIENTO", ln=True, align='C')
     pdf.ln(5)
 
-    # Datos Generales
     pdf.set_font('Arial', 'B', 10)
     pdf.cell(50, 8, txt=" Nro. Operacion:", border=1)
     pdf.set_font('Arial', '', 10)
@@ -1076,7 +1166,6 @@ def descargar_pdf(t_id):
     pdf.cell(0, 8, txt=f" {tel}", border=1, ln=True)
     pdf.ln(8)
 
-    # Tabla de Equipos
     pdf.set_font('Arial', 'B', 10)
     pdf.cell(120, 8, txt="Equipo / Hardware Asignado", border=1, align='C')
     pdf.cell(30, 8, txt="Cantidad", border=1, align='C')
@@ -1089,7 +1178,6 @@ def descargar_pdf(t_id):
     pdf.cell(40, 8, txt=f"S/. {precio:.2f}", border=1, align='C', ln=True)
     pdf.ln(10)
 
-    # Condiciones
     pdf.set_font('Arial', '', 10)
     pdf.cell(0, 8, txt=f"Vigencia del Contrato: Desde el {f_ini} hasta el {f_fin}.", ln=True)
     pdf.cell(0, 8, txt="Este documento sirve como constancia de recepcion de los equipos en optimas condiciones de hardware.", ln=True)
