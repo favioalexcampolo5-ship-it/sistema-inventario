@@ -4,6 +4,7 @@ from psycopg2 import IntegrityError
 import os
 import io
 import csv
+import unicodedata
 from datetime import datetime
 from dotenv import load_dotenv
 from fpdf import FPDF
@@ -22,6 +23,12 @@ def add_header(response):
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '-1'
     return response
+
+# Función sanitizadora para evitar colapsos en la librería PDF con acentos o eñes
+def sanitize_pdf_text(text):
+    if not text:
+        return ""
+    return unicodedata.normalize('NFKD', str(text)).encode('ASCII', 'ignore').decode('utf-8')
 
 # Lista de códigos de credenciales de trabajadores autorizados
 CREDENCIALES_VALIDAS = [
@@ -58,7 +65,7 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS equipos (
             id SERIAL PRIMARY KEY,
-            nombre TEXT NOT NULL,
+            nombre TEXT UNIQUE NOT NULL,
             marca TEXT NOT NULL,
             stock_total INTEGER NOT NULL,
             stock_disponible INTEGER NOT NULL,
@@ -66,8 +73,14 @@ def init_db():
         )
     ''')
     
-    cursor.execute("ALTER TABLE equipos ADD COLUMN IF NOT EXISTS precio_mercado NUMERIC DEFAULT 2500")
-    cursor.execute("ALTER TABLE equipos ADD COLUMN IF NOT EXISTS stock_mantenimiento INTEGER DEFAULT 0")
+    # Migraciones seguras
+    try:
+        cursor.execute("ALTER TABLE equipos ADD COLUMN IF NOT EXISTS precio_mercado NUMERIC DEFAULT 2500")
+        cursor.execute("ALTER TABLE equipos ADD COLUMN IF NOT EXISTS stock_mantenimiento INTEGER DEFAULT 0")
+        cursor.execute("ALTER TABLE equipos ADD COLUMN IF NOT EXISTS stock_qa INTEGER DEFAULT 0")
+        conn.commit()
+    except Exception:
+        conn.rollback()
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transacciones (
@@ -88,17 +101,12 @@ def init_db():
     if not cursor.fetchone():
         cursor.execute("INSERT INTO usuarios (username, password, nombre, email, telefono) VALUES ('admin', 'admin123', 'Administrador General', 'soporte@empresa.com', '999999999')")
     
-    # -------------------------------------------------------------
-    # RESTAURACIÓN COMPLETA DE 348 UNIDADES
-    # (Solo se ejecuta si el inventario está recortado o vacío)
-    # -------------------------------------------------------------
+    # Restauración del inventario si está vacío o incompleto (Ignora los nuevos equipos agregados manualmente por el UPSERT)
     cursor.execute("SELECT COUNT(*) FROM equipos")
     cantidad_actual = cursor.fetchone()[0]
     
-    if cantidad_actual < 300:
-        print("[DATA-CORE] Restaurando catálogo completo de 348 unidades con precios de mercado...")
-        
-        # Diccionario original íntegro
+    if cantidad_actual < 48: # 48 son los modelos base únicos del Excel
+        print("[DATA-CORE] Restaurando catálogo base con precios de mercado...")
         inventario_embebido = {
             "DELL Latitude 3420 | Core i5-1135G7 | 8GB": ("DELL", 1, 1400.0),
             "DELL Latitude 3420 (A0247) | Core i5-1135G7 | 16GB": ("DELL", 1, 1800.0),
@@ -150,31 +158,22 @@ def init_db():
             "Lenovo ThinkBook 15 G2 ITL | Core i5-1135G7 | 8GB": ("LENOVO", 3, 2100.0)
         }
         
-        equipos_procesados = []
         for nombre, datos in inventario_embebido.items():
-            marca = datos[0].upper().strip()
-            stock = datos[1]
-            precio_mercado_real = datos[2]
+            marca, stock, precio_mercado_real = datos[0].upper().strip(), datos[1], datos[2]
             
-            # Tarifa calculada según desgaste logístico comercial
-            if any(k in nombre.upper() for k in ["LOQ", "VICTUS"]):
-                tarifa_semanal = precio_mercado_real * 0.025
-            elif any(k in nombre.upper() for k in ["I7", "I9", "RYZEN 7", "PRECISION", "ZBOOK", "X1 CARBON"]):
-                tarifa_semanal = precio_mercado_real * 0.022
-            else:
-                tarifa_semanal = precio_mercado_real * 0.018
+            if any(k in nombre.upper() for k in ["LOQ", "VICTUS"]): tarifa_semanal = precio_mercado_real * 0.025
+            elif any(k in nombre.upper() for k in ["I7", "I9", "RYZEN 7", "PRECISION", "ZBOOK", "X1 CARBON"]): tarifa_semanal = precio_mercado_real * 0.022
+            else: tarifa_semanal = precio_mercado_real * 0.018
                 
-            equipos_procesados.append((nombre, marca, stock, stock, max(tarifa_semanal, 30.00), precio_mercado_real))
+            cursor.execute('''
+                INSERT INTO equipos (nombre, marca, stock_total, stock_disponible, precio_alquiler, precio_mercado, stock_mantenimiento, stock_qa) 
+                VALUES (%s, %s, %s, %s, %s, %s, 0, 0)
+                ON CONFLICT (nombre) DO UPDATE SET
+                    precio_alquiler = EXCLUDED.precio_alquiler,
+                    precio_mercado = EXCLUDED.precio_mercado
+            ''', (nombre, marca, stock, stock, max(tarifa_semanal, 30.00), precio_mercado_real))
             
-        try:
-            cursor.execute("TRUNCATE TABLE equipos CASCADE") 
-            cursor.executemany("INSERT INTO equipos (nombre, marca, stock_total, stock_disponible, precio_alquiler, precio_mercado) VALUES (%s, %s, %s, %s, %s, %s)", equipos_procesados)
-            conn.commit()
-            print("[DATA-CORE] ✅ Inventario de 348 unidades volcado exitosamente.")
-        except Exception as e:
-            print(f"[DATA-CORE] ❌ Error inyectando catálogo: {e}")
-            conn.rollback()
-            
+        conn.commit()
     conn.close()
 
 # ==========================================
@@ -339,7 +338,7 @@ VISTA_DASHBOARD = """
             <div class="flex items-center justify-between w-full lg:w-auto">
                 <div class="flex items-center space-x-2">
                     <span class="text-lg font-black bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent tracking-wider">ERP MANAGEMENT</span>
-                    <span class="bg-slate-950 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-800 font-mono">CLOUD DB v13.0</span>
+                    <span class="bg-slate-950 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-800 font-mono">CLOUD DB v15.0</span>
                 </div>
                 <div class="text-xs text-slate-400 lg:hidden flex space-x-2">
                     <a href="{{ url_for('dashboard') }}" class="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-2.5 py-1 rounded">🔄 Sync</a>
@@ -348,8 +347,8 @@ VISTA_DASHBOARD = """
             </div>
             
             <nav class="flex space-x-1 bg-slate-950 p-1 rounded-lg border border-slate-800 overflow-x-auto whitespace-nowrap max-w-full scrollbar-none w-full lg:w-auto">
-                <button onclick="showSection('sec-inventario')" id="btn-sec-inventario" class="tab-btn flex-shrink-0 px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-bold rounded-md transition-all bg-indigo-600 text-white">📦 Control Alquileres</button>
-                <button onclick="showSection('sec-mantenimiento')" id="btn-sec-mantenimiento" class="tab-btn flex-shrink-0 px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-bold rounded-md transition-all text-slate-400 hover:text-slate-200">🛠️ Taller Técnico</button>
+                <button onclick="showSection('sec-inventario')" id="btn-sec-inventario" class="tab-btn flex-shrink-0 px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-bold rounded-md transition-all bg-indigo-600 text-white">📦 Alquileres & Stock</button>
+                <button onclick="showSection('sec-mantenimiento')" id="btn-sec-mantenimiento" class="tab-btn flex-shrink-0 px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-bold rounded-md transition-all text-slate-400 hover:text-slate-200">🛠️ Laboratorio & Calidad</button>
                 <button onclick="showSection('sec-analytics')" id="btn-sec-analytics" class="tab-btn flex-shrink-0 px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-bold rounded-md transition-all text-slate-400 hover:text-slate-200">📊 BI & Estadísticas</button>
                 <button onclick="showSection('sec-clientes')" id="btn-sec-clientes" class="tab-btn flex-shrink-0 px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-bold rounded-md transition-all text-slate-400 hover:text-slate-200">👥 CRM Historial</button>
             </nav>
@@ -364,7 +363,6 @@ VISTA_DASHBOARD = """
 
     <main class="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
         
-        <!-- ALERTAS DE DEVOLUCIÓN -->
         {% if alertas_devolucion %}
         <div class="space-y-2">
             {% for alerta in alertas_devolucion %}
@@ -379,33 +377,33 @@ VISTA_DASHBOARD = """
         </div>
         {% endif %}
         
-        <!-- ALERTAS FLASH GLOBALES -->
         {% with messages = get_flashed_messages() %}
             {% if messages %}
                 <div class="bg-indigo-500/20 border border-indigo-500 text-indigo-200 p-4 rounded-xl text-sm font-semibold shadow-lg text-center">{{ messages[0] }}</div>
             {% endif %}
         {% endwith %}
 
-        <!-- ==============================
-        SECCIÓN 1: INVENTARIO Y ALQUILERES
-        =============================== -->
         <div id="sec-inventario" class="section-container space-y-6">
             
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
                 <div class="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl flex flex-col justify-between shadow-lg">
-                    <span class="text-[10px] sm:text-xs uppercase font-bold tracking-wider text-slate-400">Unidades de Empresa</span>
+                    <span class="text-[10px] sm:text-xs uppercase font-bold tracking-wider text-slate-400">Unidades Totales</span>
                     <h3 class="text-2xl sm:text-3xl font-black text-white mt-1 font-mono">{{ stats.unidades_totales }}</h3>
                 </div>
                 <div class="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl flex flex-col justify-between shadow-lg">
-                    <span class="text-[10px] sm:text-xs uppercase font-bold tracking-wider text-slate-400">Unidades en Almacén</span>
+                    <span class="text-[10px] sm:text-xs uppercase font-bold tracking-wider text-slate-400">En Almacén</span>
                     <h3 class="text-2xl sm:text-3xl font-black text-emerald-400 mt-1 font-mono">{{ stats.unidades_disponibles }}</h3>
                 </div>
                 <div class="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl flex flex-col justify-between shadow-lg">
-                    <span class="text-[10px] sm:text-xs uppercase font-bold tracking-wider text-slate-400">Laptops Alquiladas</span>
+                    <span class="text-[10px] sm:text-xs uppercase font-bold tracking-wider text-slate-400">Alquiladas</span>
                     <h3 class="text-2xl sm:text-3xl font-black text-indigo-400 mt-1 font-mono">{{ stats.unidades_alquiladas }}</h3>
                 </div>
                 <div class="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl flex flex-col justify-between shadow-lg">
-                    <span class="text-[10px] sm:text-xs uppercase font-bold tracking-wider text-slate-400">Modelos de Hardware</span>
+                    <span class="text-[10px] sm:text-xs uppercase font-bold tracking-wider text-slate-400">En Calidad / Taller</span>
+                    <h3 class="text-2xl sm:text-3xl font-black text-amber-500 mt-1 font-mono">{{ stats.unidades_retinidas }}</h3>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl flex flex-col justify-between shadow-lg col-span-2 lg:col-span-1">
+                    <span class="text-[10px] sm:text-xs uppercase font-bold tracking-wider text-slate-400">Modelos Activos</span>
                     <h3 class="text-2xl sm:text-3xl font-black text-cyan-400 mt-1 font-mono">{{ stats.total_modelos }}</h3>
                 </div>
             </div>
@@ -419,7 +417,7 @@ VISTA_DASHBOARD = """
                                 <p class="text-[10px] text-slate-400">Selecciona cualquier equipo para abrir el menú de gestión avanzada.</p>
                             </div>
                             <div class="w-full sm:w-auto flex flex-col sm:flex-row gap-2">
-                                <button onclick="document.getElementById('modal-add').classList.remove('hidden')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold py-2 px-4 rounded-lg shadow-lg transition-all whitespace-nowrap">➕ Añadir Hardware</button>
+                                <button onclick="document.getElementById('modal-add').classList.remove('hidden')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold py-2 px-4 rounded-lg shadow-lg transition-all whitespace-nowrap">➕ Ingresar Hardware</button>
                                 <a href="{{ url_for('exportar_inventario') }}" class="bg-amber-500 hover:bg-amber-400 text-white text-[11px] font-bold py-2 px-4 rounded-lg shadow-lg transition-all whitespace-nowrap text-center">📥 Exportar Excel</a>
                                 <input type="text" id="inputBuscar" onkeyup="buscarEquipo()" placeholder="Buscar equipo..." class="px-4 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500 w-full">
                             </div>
@@ -485,7 +483,7 @@ VISTA_DASHBOARD = """
                                         <td class="py-3.5 px-4 text-center flex justify-center space-x-2 whitespace-nowrap">
                                             <a href="{{ url_for('descargar_pdf', t_id=alq[0]) }}" target="_blank" class="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-2 py-1 rounded font-bold hover:bg-indigo-600 hover:text-white transition-all text-[11px]" title="Generar PDF">📄 PDF</a>
                                             <button onclick="abrirModalEdicionUnidades('{{ alq[0] }}', '{{ alq[2] }}', '{{ alq[6] }}', '{{ alq[1] }}')" class="bg-sky-500/10 border border-sky-500/20 text-sky-400 px-2 py-1 rounded font-bold hover:bg-sky-600 hover:text-white transition-all text-[11px]">Editar</button>
-                                            <a href="{{ url_for('devolver', transaccion_id=alq[0]) }}" class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-1 rounded font-bold hover:bg-emerald-500 hover:text-white transition-all text-[11px]">Retorno</a>
+                                            <a href="{{ url_for('devolver', transaccion_id=alq[0]) }}" class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-1 rounded font-bold hover:bg-emerald-50 hover:text-white transition-all text-[11px]">Retorno</a>
                                         </td>
                                     </tr>
                                     {% else %}
@@ -497,7 +495,6 @@ VISTA_DASHBOARD = """
                     </div>
                 </div>
 
-                <!-- PANEL FLOTANTE LATERAL -->
                 <div class="space-y-6">
                     <div id="panel-opciones-equipo" class="bg-slate-900 border-2 border-dashed border-slate-800 p-5 rounded-xl text-center text-slate-500 text-xs flex flex-col justify-center h-48">
                         <span>💡 Haz clic en cualquier fila de la lista del inventario para ver las especificaciones técnicas completas y activar sus acciones comerciales o de soporte técnico.</span>
@@ -515,38 +512,19 @@ VISTA_DASHBOARD = """
                             <button id="tab-btn-soporte" onclick="cambiarPestana('soporte')" class="w-1/3 pb-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200">🛠️ Soporte</button>
                         </div>
 
-                        <!-- TAB: ESPECIFICACIONES (NUEVO DISEÑO E-COMMERCE) -->
                         <div id="tab-content-specs" class="space-y-4">
                             <div>
                                 <h3 class="text-white font-black text-base leading-tight" id="ecommerce-nombre">Nombre Equipo</h3>
-                                <p class="text-slate-400 text-[10px] mt-1" id="ecommerce-desc">Descripción comercial dinámica generada automáticamente.</p>
+                                <p class="text-slate-400 text-[10px] mt-1" id="ecommerce-desc"></p>
                             </div>
                             
                             <div class="grid grid-cols-2 gap-y-3 gap-x-2 bg-slate-950 p-3 rounded-lg border border-slate-800 text-[10px]">
-                                <div>
-                                    <span class="text-slate-500 block uppercase font-bold text-[9px]">Procesador</span>
-                                    <span class="text-slate-200 font-semibold" id="ecommerce-cpu">---</span>
-                                </div>
-                                <div>
-                                    <span class="text-slate-500 block uppercase font-bold text-[9px]">Memoria RAM</span>
-                                    <span class="text-slate-200 font-semibold" id="ecommerce-ram">---</span>
-                                </div>
-                                <div>
-                                    <span class="text-slate-500 block uppercase font-bold text-[9px]">Almacenamiento</span>
-                                    <span class="text-slate-200 font-semibold" id="ecommerce-disco">---</span>
-                                </div>
-                                <div>
-                                    <span class="text-slate-500 block uppercase font-bold text-[9px]">Tarjeta Gráfica</span>
-                                    <span class="text-slate-200 font-semibold" id="ecommerce-gpu">---</span>
-                                </div>
-                                <div>
-                                    <span class="text-slate-500 block uppercase font-bold text-[9px]">Pantalla</span>
-                                    <span class="text-slate-200 font-semibold" id="ecommerce-pantalla">---</span>
-                                </div>
-                                <div>
-                                    <span class="text-slate-500 block uppercase font-bold text-[9px]">Sistema Operativo</span>
-                                    <span class="text-slate-200 font-semibold" id="ecommerce-os">---</span>
-                                </div>
+                                <div><span class="text-slate-500 block uppercase font-bold text-[9px]">Procesador</span><span class="text-slate-200 font-semibold" id="ecommerce-cpu">---</span></div>
+                                <div><span class="text-slate-500 block uppercase font-bold text-[9px]">Memoria RAM</span><span class="text-slate-200 font-semibold" id="ecommerce-ram">---</span></div>
+                                <div><span class="text-slate-500 block uppercase font-bold text-[9px]">Almacenamiento</span><span class="text-slate-200 font-semibold" id="ecommerce-disco">---</span></div>
+                                <div><span class="text-slate-500 block uppercase font-bold text-[9px]">Tarjeta Gráfica</span><span class="text-slate-200 font-semibold" id="ecommerce-gpu">---</span></div>
+                                <div><span class="text-slate-500 block uppercase font-bold text-[9px]">Pantalla</span><span class="text-slate-200 font-semibold" id="ecommerce-pantalla">---</span></div>
+                                <div><span class="text-slate-500 block uppercase font-bold text-[9px]">Sistema Operativo</span><span class="text-slate-200 font-semibold" id="ecommerce-os">---</span></div>
                             </div>
 
                             <div class="flex justify-between items-center pt-2 border-t border-slate-800">
@@ -561,7 +539,6 @@ VISTA_DASHBOARD = """
                             </div>
                         </div>
 
-                        <!-- TAB: FORMULARIO ALQUILER -->
                         <div id="tab-content-renta" class="hidden">
                             <form action="{{ url_for('procesar_salida') }}" method="POST" class="space-y-3">
                                 <input type="hidden" name="equipo_id" id="form-action-id">
@@ -599,11 +576,10 @@ VISTA_DASHBOARD = """
                             </form>
                         </div>
 
-                        <!-- TAB: MANTENIMIENTO TÉCNICO -->
                         <div id="tab-content-soporte" class="hidden py-4 text-center">
                             <span class="text-3xl block mb-2">🛠️</span>
-                            <h4 class="text-white font-bold text-sm mb-1">Módulo de Revisión Técnica</h4>
-                            <p class="text-slate-400 text-[11px] px-2 mb-4">Envía unidades de este lote al laboratorio por fallas o mantenimiento preventivo.</p>
+                            <h4 class="text-white font-bold text-sm mb-1">Retiro a Laboratorio</h4>
+                            <p class="text-slate-400 text-[11px] px-2 mb-4">Envía unidades de este lote al laboratorio técnico por fallas o revisión de rutina.</p>
                             <form action="{{ url_for('enviar_mantenimiento') }}" method="POST" class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
                                 <input type="hidden" name="equipo_id" id="form-soporte-id">
                                 <div class="flex justify-between items-center text-xs">
@@ -621,13 +597,47 @@ VISTA_DASHBOARD = """
             </div>
         </div>
 
-        <!-- ==============================
-        SECCIÓN 2: LABORATORIO Y MANTENIMIENTO
-        =============================== -->
         <div id="sec-mantenimiento" class="section-container hidden space-y-6">
+            
             <div class="bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-800">
-                <h2 class="text-base sm:text-lg font-bold text-white mb-1">🛠️ Laboratorio y Mantenimiento Técnico</h2>
-                <p class="text-xs text-slate-400 mb-6">Equipos actualmente retirados del almacén central para revisión de hardware, actualización de software o reparación física.</p>
+                <h2 class="text-base sm:text-lg font-bold text-white mb-1">🔍 Bandeja de Control de Calidad (Nuevos Ingresos)</h2>
+                <p class="text-xs text-slate-400 mb-6">El hardware recién ingresado al sistema permanece aquí en cuarentena técnica. Solo tras ser revisado y aprobado por un técnico, se liberará al almacén comercial.</p>
+                <div class="overflow-x-auto rounded-lg border border-slate-800/50">
+                    <table class="w-full text-left text-xs text-slate-300">
+                        <thead class="text-slate-400 bg-slate-950 border-b border-slate-800 uppercase tracking-wider text-[10px]">
+                            <tr>
+                                <th class="py-3 px-4">Nuevo Hardware Recibido</th>
+                                <th class="py-3 px-4 text-center">Unidades en Cuarentena</th>
+                                <th class="py-3 px-4 text-center">Fase Logística</th>
+                                <th class="py-3 px-4 text-center">Auditoría Técnica</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800/40">
+                            {% for eq in equipos_qa %}
+                            <tr class="hover:bg-slate-800/20 transition-colors">
+                                <td class="py-3 px-4 text-white font-semibold">{{ eq[1] }}</td>
+                                <td class="py-3 px-4 text-center text-sky-400 font-mono font-bold">{{ eq[3] }} uds.</td>
+                                <td class="py-3 px-4 text-center">
+                                    <span class="text-sky-400 font-bold bg-sky-500/10 px-2 py-0.5 border border-sky-500/20 rounded text-[10px] whitespace-nowrap">Control Calidad</span>
+                                </td>
+                                <td class="py-3 px-4 text-center">
+                                    <form action="{{ url_for('aprobar_qa') }}" method="POST">
+                                        <input type="hidden" name="equipo_id" value="{{ eq[0] }}">
+                                        <button type="submit" class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded transition-all shadow-md font-bold text-[10px] whitespace-nowrap">✔ Aprobar Lote</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="4" class="text-center py-6 text-slate-500">No hay lotes nuevos pendientes de revisión.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-800">
+                <h2 class="text-base sm:text-lg font-bold text-white mb-1">🛠️ Laboratorio Técnico (Reparaciones)</h2>
+                <p class="text-xs text-slate-400 mb-6">Equipos retirados del almacén para revisión de hardware, actualización de software o reparación por fallos durante el alquiler.</p>
                 <div class="overflow-x-auto rounded-lg border border-slate-800/50">
                     <table class="w-full text-left text-xs text-slate-300">
                         <thead class="text-slate-400 bg-slate-950 border-b border-slate-800 uppercase tracking-wider text-[10px]">
@@ -655,7 +665,7 @@ VISTA_DASHBOARD = """
                                 </td>
                             </tr>
                             {% else %}
-                            <tr><td colspan="4" class="text-center py-6 text-slate-500">El laboratorio técnico se encuentra vacío. Todos los equipos corporativos están operativos.</td></tr>
+                            <tr><td colspan="4" class="text-center py-6 text-slate-500">El laboratorio técnico se encuentra vacío. Todo el hardware corporativo está operativo.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -663,9 +673,6 @@ VISTA_DASHBOARD = """
             </div>
         </div>
 
-        <!-- ==============================
-        SECCIÓN 3: BI ESTADÍSTICAS
-        =============================== -->
         <div id="sec-analytics" class="section-container hidden space-y-6">
             <div class="bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-800">
                 <h2 class="text-base sm:text-lg font-bold text-white mb-1">📊 Inteligencia de Negocios (Business Intelligence)</h2>
@@ -701,9 +708,6 @@ VISTA_DASHBOARD = """
             </div>
         </div>
 
-        <!-- ==============================
-        SECCIÓN 4: CRM HISTORIAL
-        =============================== -->
         <div id="sec-clientes" class="section-container hidden space-y-6">
             <div class="bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-800">
                 <h2 class="text-base sm:text-lg font-bold text-white mb-1">👥 Módulo CRM - Base de Datos Transaccional</h2>
@@ -757,9 +761,6 @@ VISTA_DASHBOARD = """
 
     </main>
 
-    <!-- ==========================================
-    MODALES FLOTANTES
-    =========================================== -->
     <div id="modal-edit-unidades" class="hidden fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center px-4 backdrop-blur-sm">
         <div class="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-sm p-6 shadow-2xl">
             <h3 class="text-white font-bold text-base mb-1">📝 Modificar Unidades del Contrato</h3>
@@ -776,7 +777,7 @@ VISTA_DASHBOARD = """
                     <p class="text-slate-400 text-[10px] mt-1 text-center">💡 El stock del almacén se ajustará automáticamente.</p>
                 </div>
                 <div class="flex space-x-3 pt-2">
-                    <button type="button" onclick="document.getElementById('modal-edit-unidades').classList.add('hidden')" class="w-1/2 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg">Cerrar</button>
+                    <button type="button" onclick="document.getElementById('modal-edit-unidades').classList.add('hidden')" class="w-1/2 py-2 bg-slate-800 text-white font-bold rounded-lg">Cerrar</button>
                     <button type="submit" class="w-1/2 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg shadow-md">Guardar Ajuste</button>
                 </div>
             </form>
@@ -821,7 +822,8 @@ VISTA_DASHBOARD = """
 
     <div id="modal-add" class="hidden fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center px-4 backdrop-blur-sm">
         <div class="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md p-6 shadow-2xl">
-            <h3 class="text-white font-bold text-lg mb-1">➕ Añadir Nuevo Hardware</h3>
+            <h3 class="text-white font-bold text-lg mb-1">📥 Ingresar Nuevo Hardware</h3>
+            <p class="text-slate-400 text-[11px] mb-5">El equipo ingresará a Control de Calidad antes de liberarse al almacén.</p>
             <form action="{{ url_for('agregar_equipo') }}" method="POST" class="space-y-4 text-xs mt-4">
                 <div>
                     <label class="block text-slate-400 mb-1 font-semibold uppercase tracking-wider">Especificaciones Técnicas</label>
@@ -835,25 +837,22 @@ VISTA_DASHBOARD = """
                         </select>
                     </div>
                     <div>
-                        <label class="block text-slate-400 mb-1 font-semibold uppercase tracking-wider">Stock Inicial</label>
+                        <label class="block text-slate-400 mb-1 font-semibold uppercase tracking-wider">Stock Recibido</label>
                         <input type="number" name="stock" min="1" required class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-center font-mono">
                     </div>
                 </div>
                 <div>
-                    <label class="block text-slate-400 mb-1 font-semibold uppercase tracking-wider">Tarifa Semanal (S/.)</label>
+                    <label class="block text-slate-400 mb-1 font-semibold uppercase tracking-wider">Tarifa Semanal Estimada (S/.)</label>
                     <input type="number" step="0.01" name="precio" min="1" required class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-indigo-400 font-bold font-mono">
                 </div>
                 <div class="flex space-x-3 pt-4">
                     <button type="button" onclick="document.getElementById('modal-add').classList.add('hidden')" class="w-1/2 py-2.5 bg-slate-800 text-white font-bold rounded-lg">Cancelar</button>
-                    <button type="submit" class="w-1/2 py-2.5 bg-emerald-600 text-white font-bold rounded-lg">Guardar Equipo</button>
+                    <button type="submit" class="w-1/2 py-2.5 bg-sky-600 text-white font-bold rounded-lg shadow-md">Enviar a Calidad (QA)</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- ==========================================
-    JAVASCRIPT FRONTEND (EXTRACTOR DE SPECS)
-    =========================================== -->
     <script>
     let activeTarifaSugerida = 0.0;
 
@@ -868,7 +867,6 @@ VISTA_DASHBOARD = """
         document.getElementById('btn-' + sectionId).classList.add('bg-indigo-600', 'text-white');
     }
 
-    // MOTOR DE EXTRACCIÓN Y DEDUCCIÓN DE CARACTERÍSTICAS
     function generarSpecs(nombreCompleto) {
         let partes = nombreCompleto.split('|').map(p => p.trim());
         let modelo = partes[0] || nombreCompleto;
@@ -906,7 +904,6 @@ VISTA_DASHBOARD = """
 
         document.getElementById('info-badge-marca').innerText = marca;
         
-        // Inyectar E-commerce Specs
         let specs = generarSpecs(nombre);
         document.getElementById('ecommerce-nombre').innerText = specs.modelo;
         document.getElementById('ecommerce-desc').innerText = specs.desc;
@@ -920,7 +917,6 @@ VISTA_DASHBOARD = """
         document.getElementById('info-txt-precio-renta').innerText = 'S/. ' + parseFloat(precioRenta).toFixed(2);
         document.getElementById('info-txt-precio-real').innerText = 'S/. ' + parseFloat(precioReal).toFixed(2);
 
-        // Formularios ocultos
         document.getElementById('form-action-id').value = id;
         document.getElementById('form-soporte-id').value = id;
         document.getElementById('form-action-stock-label').innerText = stockDisp + ' / ' + stockTot + ' uds.';
@@ -1020,7 +1016,7 @@ VISTA_DASHBOARD = """
 
     const ctxStock = document.getElementById('chartStock').getContext('2d');
     new Chart(ctxStock, {
-        type: 'doughnut', data: { labels: ['Uds en Almacén', 'Uds en Campo'], datasets: [{ data: [{{ graph_data.stock_disp }}, {{ graph_data.stock_alqu }}], backgroundColor: ['rgba(52, 211, 153, 0.6)', 'rgba(99, 102, 241, 0.6)'], borderColor: ['#34d399', '#6366f1'], borderWidth: 1 }] },
+        type: 'doughnut', data: { labels: ['Disp.', 'Rentadas', 'Calidad/Taller'], datasets: [{ data: [{{ graph_data.stock_disp }}, {{ graph_data.stock_alqu }}, {{ graph_data.stock_maint }}], backgroundColor: ['rgba(52, 211, 153, 0.6)', 'rgba(99, 102, 241, 0.6)', 'rgba(245, 158, 11, 0.6)'], borderColor: ['#34d399', '#6366f1', '#f59e0b'], borderWidth: 1 }] },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 10 } } } } }
     });
     </script>
@@ -1118,6 +1114,10 @@ def dashboard():
     cursor.execute("SELECT id, nombre, marca, stock_mantenimiento FROM equipos WHERE stock_mantenimiento > 0 ORDER BY marca")
     equipos_mantenimiento = cursor.fetchall()
     
+    # Extraer también el hardware que está atrapado en Control de Calidad (QA)
+    cursor.execute("SELECT id, nombre, marca, stock_qa FROM equipos WHERE stock_qa > 0 ORDER BY marca")
+    equipos_qa = cursor.fetchall()
+    
     cursor.execute("SELECT t.id, e.nombre, t.cliente, t.fecha_inicio, t.fecha_fin, t.precio_total, t.cantidad FROM transacciones t JOIN equipos e ON t.equipo_id = e.id WHERE t.activo = 1 ORDER BY t.id DESC")
     transacciones_activas = cursor.fetchall()
     
@@ -1140,10 +1140,19 @@ def dashboard():
         except Exception:
             pass
 
-    cursor.execute("SELECT COUNT(*), SUM(stock_disponible), SUM(stock_total) FROM equipos")
+    # Lógica Matemática rigurosa para aislar estados de inventario
+    cursor.execute("SELECT COUNT(*), SUM(stock_disponible), SUM(stock_total), SUM(stock_mantenimiento), SUM(stock_qa) FROM equipos")
     res_eq = cursor.fetchone()
-    total_modelos, stock_disp, stock_total_corp = int(res_eq[0] or 0), int(res_eq[1] or 0), int(res_eq[2] or 0)
-    stock_alqu = stock_total_corp - stock_disp
+    total_modelos = int(res_eq[0] or 0)
+    stock_disp = int(res_eq[1] or 0)
+    stock_total_corp = int(res_eq[2] or 0)
+    stock_maint = int(res_eq[3] or 0)
+    stock_qa = int(res_eq[4] or 0)
+    
+    # Ecuación balanceada oficial: Almacén Total - Disponible - Taller - Control Calidad = Laptops Alquiladas Reales
+    stock_alqu = stock_total_corp - stock_disp - stock_maint - stock_qa
+    stock_retinido = stock_maint + stock_qa
+    
     tasa_ocupacion = (stock_alqu / stock_total_corp * 100) if stock_total_corp > 0 else 0.0
 
     cursor.execute("SELECT COUNT(*), SUM(precio_total), AVG(precio_total), COUNT(DISTINCT cliente) FROM transacciones")
@@ -1157,13 +1166,15 @@ def dashboard():
     top_clientes_data = [float(r[1]) for r in res_top] or [0]
 
     stats = {
-        'total_modelos': total_modelos, 'unidades_disponibles': stock_disp, 'unidades_totales': stock_total_corp, 'unidades_alquiladas': stock_alqu, 'tasa_ocupacion': tasa_ocupacion, 'total_transacciones': total_transacciones,
-        'ganancias_totales': ganancias_totales, 'ticket_promedio': ticket_promedio, 'clientes_unicos': clientes_unicos, 'top_clientes_labels': top_clientes_labels, 'top_clientes_data': top_clientes_data
+        'total_modelos': total_modelos, 'unidades_disponibles': stock_disp, 'unidades_totales': stock_total_corp, 
+        'unidades_alquiladas': stock_alqu, 'unidades_retinidas': stock_retinido, 'tasa_ocupacion': tasa_ocupacion, 
+        'total_transacciones': total_transacciones, 'ganancias_totales': ganancias_totales, 'ticket_promedio': ticket_promedio, 
+        'clientes_unicos': clientes_unicos, 'top_clientes_labels': top_clientes_labels, 'top_clientes_data': top_clientes_data
     }
-    graph_data = {'stock_disp': stock_disp, 'stock_alqu': stock_alqu}
+    graph_data = {'stock_disp': stock_disp, 'stock_alqu': stock_alqu, 'stock_maint': stock_retinido}
     conn.close()
     
-    return render_template_string(VISTA_DASHBOARD, equipos=equipos, equipos_mantenimiento=equipos_mantenimiento, transacciones_activas=transacciones_activas, historial_completo=historial_completo, perfil=perfil_dict, stats=stats, graph_data=graph_data, alertas_devolucion=alertas_devolucion)
+    return render_template_string(VISTA_DASHBOARD, equipos=equipos, equipos_mantenimiento=equipos_mantenimiento, equipos_qa=equipos_qa, transacciones_activas=transacciones_activas, historial_completo=historial_completo, perfil=perfil_dict, stats=stats, graph_data=graph_data, alertas_devolucion=alertas_devolucion)
 
 # ==========================================
 # RUTAS DE PDF Y MANTENIMIENTO TÉCNICO
@@ -1178,11 +1189,19 @@ def descargar_pdf(t_id):
     conn.close()
     
     if not res: return redirect(url_for('dashboard'))
-    cliente, tel, f_ini, f_fin, cant, precio, eq_nombre, eq_marca = res
+    
+    # Sanitización de datos: Extraemos acentos para evitar que FPDF colapse el servidor web (Error 500)
+    cliente = sanitize_pdf_text(res[0])
+    tel = sanitize_pdf_text(res[1])
+    f_ini, f_fin = res[2], res[3]
+    cant, precio = res[4], res[5]
+    eq_nombre = sanitize_pdf_text(res[6])
+    eq_marca = sanitize_pdf_text(res[7])
 
     pdf = FPDF()
     pdf.add_page()
     
+    # Membrete Empresarial 
     pdf.set_font('Arial', 'B', 16)
     pdf.set_text_color(50, 50, 120)
     pdf.cell(0, 10, txt="SISTEMA ERP - DIVISION DE ACTIVOS TECNOLOGICOS", ln=True, align='C')
@@ -1191,18 +1210,22 @@ def descargar_pdf(t_id):
     pdf.cell(0, 10, txt="CONTRATO OFICIAL DE ARRENDAMIENTO", ln=True, align='C')
     pdf.ln(5)
 
+    # Datos Generales
     pdf.set_font('Arial', 'B', 10)
     pdf.cell(50, 8, txt=" Nro. Operacion:", border=1)
     pdf.set_font('Arial', '', 10)
     pdf.cell(0, 8, txt=f" #ERP-{t_id:05d}", border=1, ln=True)
+    pdf.set_font('Arial', 'B', 10)
     pdf.cell(50, 8, txt=" Cliente Registrado:", border=1)
     pdf.set_font('Arial', '', 10)
     pdf.cell(0, 8, txt=f" {cliente}", border=1, ln=True)
+    pdf.set_font('Arial', 'B', 10)
     pdf.cell(50, 8, txt=" Contacto:", border=1)
     pdf.set_font('Arial', '', 10)
     pdf.cell(0, 8, txt=f" {tel}", border=1, ln=True)
     pdf.ln(8)
 
+    # Tabla de Equipos
     pdf.set_font('Arial', 'B', 10)
     pdf.cell(120, 8, txt="Equipo / Hardware Asignado", border=1, align='C')
     pdf.cell(30, 8, txt="Cantidad", border=1, align='C')
@@ -1215,6 +1238,7 @@ def descargar_pdf(t_id):
     pdf.cell(40, 8, txt=f"S/. {precio:.2f}", border=1, align='C', ln=True)
     pdf.ln(10)
 
+    # Condiciones
     pdf.set_font('Arial', '', 10)
     pdf.cell(0, 8, txt=f"Vigencia del Contrato: Desde el {f_ini} hasta el {f_fin}.", ln=True)
     pdf.cell(0, 8, txt="Este documento sirve como constancia de recepcion de los equipos en optimas condiciones de hardware.", ln=True)
@@ -1227,7 +1251,10 @@ def descargar_pdf(t_id):
     pdf.cell(10, 8, txt="")
     pdf.cell(90, 8, txt="Firma de Conformidad Cliente", align='C', ln=True)
 
-    pdf_bytes = pdf.output(dest='S').encode('latin1')
+    # Forzar el output a bytes seguros
+    pdf_out = pdf.output(dest='S')
+    pdf_bytes = pdf_out.encode('latin1', 'replace') if isinstance(pdf_out, str) else bytes(pdf_out)
+    
     response = Response(pdf_bytes, mimetype="application/pdf")
     response.headers['Content-Disposition'] = f"attachment;filename=Contrato_ERP_00{t_id}.pdf"
     return response
@@ -1244,7 +1271,7 @@ def enviar_mantenimiento():
     if disp >= cant:
         cursor.execute("UPDATE equipos SET stock_disponible = stock_disponible - %s, stock_mantenimiento = stock_mantenimiento + %s WHERE id=%s", (cant, cant, eq_id))
         conn.commit()
-        flash(f"🛠️ {cant} unidades enviadas al laboratorio de mantenimiento técnico.")
+        flash(f"🛠️ {cant} unidades aisladas en el laboratorio técnico (retiradas de stock disponible).")
     else:
         flash("❌ Error: No hay suficientes unidades disponibles para mantenimiento.")
     conn.close()
@@ -1262,12 +1289,27 @@ def retornar_mantenimiento():
     if mant >= cant:
         cursor.execute("UPDATE equipos SET stock_mantenimiento = stock_mantenimiento - %s, stock_disponible = stock_disponible + %s WHERE id=%s", (cant, cant, eq_id))
         conn.commit()
-        flash(f"✅ {cant} unidades reparadas y devueltas al almacén central.")
+        flash(f"✅ {cant} unidades reparadas y liberadas al almacén central.")
     conn.close()
     return redirect(url_for('dashboard'))
 
 # ==========================================
-# RUTAS ESTÁNDAR 
+# RUTAS DE CONTROL DE CALIDAD (QA)
+# ==========================================
+@app.route('/aprobar-qa', methods=['POST'])
+def aprobar_qa():
+    if 'usuario_id' not in session: return redirect(url_for('index'))
+    eq_id = int(request.form['equipo_id'])
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE equipos SET stock_disponible = stock_disponible + stock_qa, stock_qa = 0 WHERE id=%s", (eq_id,))
+    conn.commit()
+    conn.close()
+    flash("🔍 Control de calidad aprobado. El nuevo hardware ya está disponible en el almacén central para su alquiler.")
+    return redirect(url_for('dashboard'))
+
+# ==========================================
+# RUTAS ESTÁNDAR DE CRM E INVENTARIO
 # ==========================================
 @app.route('/editar-historial', methods=['POST'])
 def editar_historial():
@@ -1304,7 +1346,7 @@ def eliminar_historial(t_id):
             cursor.execute("UPDATE equipos SET stock_disponible = stock_disponible + %s WHERE id=%s", (cant, eq_id))
         cursor.execute("DELETE FROM transacciones WHERE id=%s", (t_id,))
         conn.commit()
-        flash("🗑️ Registro del historial CRM eliminado y purgado.")
+        flash("🗑️ Registro del historial CRM eliminado y purgado de manera segura.")
     conn.close()
     return redirect(url_for('dashboard'))
 
@@ -1329,7 +1371,7 @@ def editar_unidades_transaccion():
             cursor.execute("UPDATE transacciones SET cantidad=%s, precio_total=%s WHERE id=%s", (nueva_cantidad, nuevo_precio_total, t_id))
             cursor.execute("UPDATE equipos SET stock_disponible = stock_disponible - %s WHERE id=%s", (diferencia_unidades, eq_id))
             conn.commit()
-            flash("✅ Unidades de contrato modificadas.")
+            flash("✅ Unidades de contrato modificadas y stock regularizado.")
     conn.close()
     return redirect(url_for('dashboard'))
 
@@ -1355,10 +1397,17 @@ def agregar_equipo():
     stock, precio = int(request.form['stock']), float(request.form['precio'])
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO equipos (nombre, marca, stock_total, stock_disponible, precio_alquiler, precio_mercado) VALUES (%s, %s, %s, %s, %s, %s)",
-                   (especificaciones, marca.upper(), stock, stock, precio, precio * 50.0))
-    conn.commit()
-    conn.close()
+    try:
+        # Pasa directamente a stock_qa (Control de calidad) en vez de stock_disponible
+        cursor.execute("INSERT INTO equipos (nombre, marca, stock_total, stock_disponible, precio_alquiler, precio_mercado, stock_mantenimiento, stock_qa) VALUES (%s, %s, %s, 0, %s, %s, 0, %s)",
+                       (especificaciones, marca.upper(), stock, precio, precio * 50.0, stock))
+        conn.commit()
+        flash("📥 Lote recibido. El equipo fue enviado a la bandeja de Control de Calidad.")
+    except Exception as e:
+        flash(f"❌ Error al añadir equipo: Posible duplicidad de nombre.")
+        conn.rollback()
+    finally:
+        conn.close()
     return redirect(url_for('dashboard'))
 
 @app.route('/eliminar-equipo/<int:equipo_id>', methods=['POST'])
@@ -1371,7 +1420,7 @@ def eliminar_equipo(equipo_id):
         conn.commit()
         flash("🗑️ Equipo eliminado del catálogo correctamente.")
     except IntegrityError:
-        flash("⚠️ No puedes eliminar este equipo porque tiene un historial de alquileres.")
+        flash("⚠️ No puedes eliminar este equipo porque tiene un historial de alquileres que debe preservarse.")
     conn.close()
     return redirect(url_for('dashboard'))
 
@@ -1394,9 +1443,9 @@ def procesar_salida():
         cursor.execute("INSERT INTO transacciones (equipo_id, cliente, telefono_cliente, fecha_inicio, fecha_fin, cantidad, precio_total, activo) VALUES (%s, %s, %s, %s, %s, %s, %s, 1)", 
                        (equipo_id, cliente, telefono_cliente, f_inicio, f_fin, cantidad, precio))
         conn.commit()
-        flash(f"Salida registrada: {cantidad} unidades arrendadas al cliente {cliente}.")
+        flash(f"✅ Salida registrada: {cantidad} unidades arrendadas al cliente {cliente}.")
     else:
-        flash(f"Error: Stock insuficiente.")
+        flash(f"❌ Error: Stock en almacén insuficiente para completar la orden.")
     conn.close()
     return redirect(url_for('dashboard'))
 
@@ -1412,7 +1461,7 @@ def devolver(transaccion_id):
         cursor.execute("UPDATE transacciones SET activo = 0 WHERE id=%s", (transaccion_id,))
         cursor.execute("UPDATE equipos SET stock_disponible = stock_disponible + %s WHERE id=%s", (cant, eq_id))
         conn.commit()
-        flash(f"Retorno confirmado. {cant} unidades reintegradas.")
+        flash(f"✅ Retorno confirmado. {cant} unidades reintegradas al almacén.")
     conn.close()
     return redirect(url_for('dashboard'))
 
