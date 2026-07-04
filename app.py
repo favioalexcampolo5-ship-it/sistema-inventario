@@ -88,48 +88,52 @@ def init_db():
     if not cursor.fetchone():
         cursor.execute("INSERT INTO usuarios (username, password, nombre, email, telefono) VALUES ('admin', 'admin123', 'Administrador General', 'soporte@empresa.com', '999999999')")
     
-    cursor.execute("SELECT COUNT(*) FROM equipos")
-    if cursor.fetchone()[0] == 0:
-        # Precios ajustados a mercado real Perú (Referencia Hiraoka, Ripley, CompuSystem)
-        inventario_embebido = {
-            "DELL Latitude 3420 | Core i5-1135G7 | 8GB": ("DELL", 1, 1450.00),
-            "DELL Latitude 3520 | Core i7-1165G7 | 24GB": ("DELL", 20, 2950.00),
-            "DELL Latitude 3520 | Core i7-1165G7 | 8GB": ("DELL", 59, 2600.00),
-            "HP 250 G9 | Core i7-1255U | 16GB": ("HP", 44, 2900.00),
-            "HP 348 G7 | Core i7-10510U | 16GB": ("HP", 25, 3899.00),
-            "HP Victus 15-fa0007la | Core i5-12450H | 16GB": ("HP", 6, 3899.00),
-            "LENOVO LOQ 15IAX9 | Core i5-12450HX | 16GB": ("LENOVO", 14, 3400.00),
-            "LENOVO LOQ 15IRH8 | Core i5-13420H | 16GB": ("LENOVO", 23, 3500.00),
-            "LENOVO LOQ 15IRX9 | Core i5-12450HX | 16GB": ("LENOVO", 25, 3600.00),
-            "LENOVO ThinkBook 14-IML | Core i5-10210U | 8GB": ("LENOVO", 10, 1800.00),
-            "LENOVO ThinkPad E14 Gen2 | Core i5-1135G7 | 16GB": ("LENOVO", 32, 2400.00),
-            "LENOVO ThinkPad L14 Gen 2 | Core i5-1135G7 | 16GB": ("LENOVO", 12, 2500.00),
-            "LENOVO V15-ILL | Core i5-1035G1 | 8GB": ("LENOVO", 7, 1600.00)
-        }
+    # -------------------------------------------------------------
+    # SOLUCIÓN: Forzamos la reconstrucción limpia del catálogo 
+    # para inyectar los precios reales del mercado peruano
+    # -------------------------------------------------------------
+    print("[DATA-CORE] Actualizando catálogo con precios reales del mercado...")
+    inventario_embebido = {
+        "DELL Latitude 3420 | Core i5-1135G7 | 8GB": ("DELL", 1, 1400.00),
+        "DELL Latitude 3520 | Core i7-1165G7 | 24GB": ("DELL", 20, 3000.00),
+        "DELL Latitude 3520 | Core i7-1165G7 | 8GB": ("DELL", 59, 2600.00),
+        "HP 250 G9 | Core i7-1255U | 16GB": ("HP", 44, 2600.00),
+        "HP 348 G7 | Core i7-10510U | 16GB": ("HP", 25, 3899.00),
+        "HP Victus 15-fa0007la | Core i5-12450H | 16GB": ("HP", 6, 3600.00),
+        "LENOVO LOQ 15IAX9 | Core i5-12450HX | 16GB": ("LENOVO", 14, 3400.00),
+        "LENOVO LOQ 15IRH8 | Core i5-13420H | 16GB": ("LENOVO", 23, 3500.00),
+        "LENOVO LOQ 15IRX9 | Core i5-12450HX | 16GB": ("LENOVO", 25, 3600.00),
+        "LENOVO ThinkBook 14-IML | Core i5-10210U | 8GB": ("LENOVO", 10, 1800.00),
+        "LENOVO ThinkPad E14 Gen2 | Core i5-1135G7 | 16GB": ("LENOVO", 32, 2400.00),
+        "LENOVO ThinkPad L14 Gen 2 | Core i5-1135G7 | 16GB": ("LENOVO", 12, 2500.00),
+        "LENOVO V15-ILL | Core i5-1035G1 | 8GB": ("LENOVO", 7, 1600.00)
+    }
+    
+    equipos_procesados = []
+    for nombre, datos in inventario_embebido.items():
+        marca = datos[0].upper().strip()
+        stock = datos[1]
+        precio_mercado_real = datos[2]
         
-        equipos_procesados = []
-        for nombre, datos in inventario_embebido.items():
-            marca = datos[0].upper().strip()
-            stock = datos[1]
-            precio_mercado_real = datos[2]
+        # Tarifa calculada según desgaste logístico comercial
+        if any(k in nombre.upper() for k in ["LOQ", "VICTUS"]):
+            tarifa_semanal = precio_mercado_real * 0.025
+        elif any(k in nombre.upper() for k in ["I7", "RYZEN 7"]):
+            tarifa_semanal = precio_mercado_real * 0.022
+        else:
+            tarifa_semanal = precio_mercado_real * 0.018
             
-            # El alquiler se basa en un ROI estándar de hardware (~1.5% a 2.5% del valor real x semana)
-            if any(k in nombre.upper() for k in ["LOQ", "VICTUS"]):
-                tarifa_semanal = precio_mercado_real * 0.025 # Gama Gamer, mayor desgaste
-            elif any(k in nombre.upper() for k in ["I7", "RYZEN 7"]):
-                tarifa_semanal = precio_mercado_real * 0.022 # Gama Alta Ejecutiva
-            else:
-                tarifa_semanal = precio_mercado_real * 0.018 # Gama Media Corporativa
-                
-            equipos_procesados.append((nombre, marca, stock, stock, max(tarifa_semanal, 30.00), precio_mercado_real))
-            
-        try:
-            cursor.execute("TRUNCATE TABLE equipos CASCADE") 
-            cursor.executemany("INSERT INTO equipos (nombre, marca, stock_total, stock_disponible, precio_alquiler, precio_mercado) VALUES (%s, %s, %s, %s, %s, %s)", equipos_procesados)
-            conn.commit()
-        except Exception as e:
-            print(f"[DATA-CORE] ❌ Error inyectando datos: {e}")
-            
+        equipos_procesados.append((nombre, marca, stock, stock, max(tarifa_semanal, 30.00), precio_mercado_real))
+        
+    try:
+        cursor.execute("TRUNCATE TABLE equipos CASCADE") 
+        cursor.executemany("INSERT INTO equipos (nombre, marca, stock_total, stock_disponible, precio_alquiler, precio_mercado) VALUES (%s, %s, %s, %s, %s, %s)", equipos_procesados)
+        conn.commit()
+        print("[DATA-CORE] ✅ Base de datos sincronizada con éxito.")
+    except Exception as e:
+        print(f"[DATA-CORE] ❌ Error inyectando catálogo: {e}")
+        conn.rollback()
+        
     conn.close()
 
 # ==========================================
@@ -319,7 +323,6 @@ VISTA_DASHBOARD = """
 
     <main class="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
         
-        <!-- ALERTAS DE DEVOLUCIÓN -->
         {% if alertas_devolucion %}
         <div class="space-y-2">
             {% for alerta in alertas_devolucion %}
@@ -334,16 +337,12 @@ VISTA_DASHBOARD = """
         </div>
         {% endif %}
         
-        <!-- ALERTAS FLASH GLOBALES -->
         {% with messages = get_flashed_messages() %}
             {% if messages %}
                 <div class="bg-indigo-500/20 border border-indigo-500 text-indigo-200 p-4 rounded-xl text-sm font-semibold shadow-lg text-center">{{ messages[0] }}</div>
             {% endif %}
         {% endwith %}
 
-        <!-- ==============================
-        SECCIÓN 1: INVENTARIO Y ALQUILERES
-        =============================== -->
         <div id="sec-inventario" class="section-container space-y-6">
             
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -452,7 +451,6 @@ VISTA_DASHBOARD = """
                     </div>
                 </div>
 
-                <!-- PANEL FLOTANTE LATERAL -->
                 <div class="space-y-6">
                     <div id="panel-opciones-equipo" class="bg-slate-900 border-2 border-dashed border-slate-800 p-5 rounded-xl text-center text-slate-500 text-xs flex flex-col justify-center h-48">
                         <span>💡 Haz clic en cualquier fila de la lista del inventario para ver las especificaciones técnicas completas y activar sus acciones comerciales o de soporte técnico.</span>
@@ -470,7 +468,6 @@ VISTA_DASHBOARD = """
                             <button id="tab-btn-soporte" onclick="cambiarPestana('soporte')" class="w-1/3 pb-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200">🛠️ Soporte</button>
                         </div>
 
-                        <!-- TAB: ESPECIFICACIONES (NUEVO DISEÑO E-COMMERCE) -->
                         <div id="tab-content-specs" class="space-y-4">
                             <div>
                                 <h3 class="text-white font-black text-base leading-tight" id="ecommerce-nombre">Nombre Equipo</h3>
@@ -516,7 +513,6 @@ VISTA_DASHBOARD = """
                             </div>
                         </div>
 
-                        <!-- TAB: FORMULARIO ALQUILER -->
                         <div id="tab-content-renta" class="hidden">
                             <form action="{{ url_for('procesar_salida') }}" method="POST" class="space-y-3">
                                 <input type="hidden" name="equipo_id" id="form-action-id">
@@ -554,7 +550,6 @@ VISTA_DASHBOARD = """
                             </form>
                         </div>
 
-                        <!-- TAB: MANTENIMIENTO TÉCNICO -->
                         <div id="tab-content-soporte" class="hidden py-4 text-center">
                             <span class="text-3xl block mb-2">🛠️</span>
                             <h4 class="text-white font-bold text-sm mb-1">Módulo de Revisión Técnica</h4>
@@ -576,9 +571,6 @@ VISTA_DASHBOARD = """
             </div>
         </div>
 
-        <!-- ==============================
-        SECCIÓN 2: LABORATORIO Y MANTENIMIENTO
-        =============================== -->
         <div id="sec-mantenimiento" class="section-container hidden space-y-6">
             <div class="bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-800">
                 <h2 class="text-base sm:text-lg font-bold text-white mb-1">🛠️ Laboratorio y Mantenimiento Técnico</h2>
@@ -618,9 +610,6 @@ VISTA_DASHBOARD = """
             </div>
         </div>
 
-        <!-- ==============================
-        SECCIÓN 3: BI ESTADÍSTICAS
-        =============================== -->
         <div id="sec-analytics" class="section-container hidden space-y-6">
             <div class="bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-800">
                 <h2 class="text-base sm:text-lg font-bold text-white mb-1">📊 Inteligencia de Negocios (Business Intelligence)</h2>
@@ -656,9 +645,6 @@ VISTA_DASHBOARD = """
             </div>
         </div>
 
-        <!-- ==============================
-        SECCIÓN 4: CRM HISTORIAL
-        =============================== -->
         <div id="sec-clientes" class="section-container hidden space-y-6">
             <div class="bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-800">
                 <h2 class="text-base sm:text-lg font-bold text-white mb-1">👥 Módulo CRM - Base de Datos Transaccional</h2>
@@ -712,9 +698,6 @@ VISTA_DASHBOARD = """
 
     </main>
 
-    <!-- ==========================================
-    MODALES FLOTANTES
-    =========================================== -->
     <div id="modal-edit-unidades" class="hidden fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center px-4 backdrop-blur-sm">
         <div class="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-sm p-6 shadow-2xl">
             <h3 class="text-white font-bold text-base mb-1">📝 Modificar Unidades del Contrato</h3>
@@ -806,9 +789,6 @@ VISTA_DASHBOARD = """
         </div>
     </div>
 
-    <!-- ==========================================
-    JAVASCRIPT FRONTEND (EXTRACTOR DE SPECS)
-    =========================================== -->
     <script>
     let activeTarifaSugerida = 0.0;
 
@@ -823,7 +803,6 @@ VISTA_DASHBOARD = """
         document.getElementById('btn-' + sectionId).classList.add('bg-indigo-600', 'text-white');
     }
 
-    // MOTOR DE EXTRACCIÓN Y DEDUCCIÓN DE CARACTERÍSTICAS
     function generarSpecs(nombreCompleto) {
         let partes = nombreCompleto.split('|').map(p => p.trim());
         let modelo = partes[0] || nombreCompleto;
@@ -861,7 +840,6 @@ VISTA_DASHBOARD = """
 
         document.getElementById('info-badge-marca').innerText = marca;
         
-        // Inyectar E-commerce Specs
         let specs = generarSpecs(nombre);
         document.getElementById('ecommerce-nombre').innerText = specs.modelo;
         document.getElementById('ecommerce-desc').innerText = specs.desc;
@@ -875,7 +853,6 @@ VISTA_DASHBOARD = """
         document.getElementById('info-txt-precio-renta').innerText = 'S/. ' + parseFloat(precioRenta).toFixed(2);
         document.getElementById('info-txt-precio-real').innerText = 'S/. ' + parseFloat(precioReal).toFixed(2);
 
-        // Formularios ocultos
         document.getElementById('form-action-id').value = id;
         document.getElementById('form-soporte-id').value = id;
         document.getElementById('form-action-stock-label').innerText = stockDisp + ' / ' + stockTot + ' uds.';
@@ -998,15 +975,26 @@ def login():
     password = request.form['password']
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, username, nombre FROM usuarios WHERE username=%s AND password=%s", (username, password))
+    cursor.execute("SELECT id, username, font, nombre FROM usuarios WHERE username=%s AND password=%s", (username, password))
     user = cursor.fetchone()
     conn.close()
     if user:
         session['usuario_id'] = user[0]
         session['username'] = user[1]
-        session['nombre'] = user[2]
+        session['nombre'] = user[3]
         return redirect(url_for('dashboard'))
     else:
+        # Intento de fallback por si la tupla varió
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, username, nombre FROM usuarios WHERE username=%s AND password=%s", (username, password))
+        user = cursor.fetchone()
+        conn.close()
+        if user:
+            session['usuario_id'] = user[0]
+            session['username'] = user[1]
+            session['nombre'] = user[2]
+            return redirect(url_for('dashboard'))
         flash("Las credenciales ingresadas son inválidas.")
         return redirect(url_for('index'))
 
@@ -1121,8 +1109,75 @@ def dashboard():
     return render_template_string(VISTA_DASHBOARD, equipos=equipos, equipos_mantenimiento=equipos_mantenimiento, transacciones_activas=transacciones_activas, historial_completo=historial_completo, perfil=perfil_dict, stats=stats, graph_data=graph_data, alertas_devolucion=alertas_devolucion)
 
 # ==========================================
-# RUTAS DE PDF Y MANTENIMIENTO TÉCNICO
+# RUTAS DE ACCIONES CRM
 # ==========================================
+@app.route('/editar-historial', methods=['POST'])
+def editar_historial():
+    if 'usuario_id' not in session: return redirect(url_for('index'))
+    t_id = int(request.form['transaccion_id'])
+    cliente, telefono = request.form['cliente'], request.form['telefono_cliente']
+    f_inicio_raw, f_fin_raw = request.form['fecha_inicio'], request.form['fecha_fin']
+    precio = float(request.form['precio_total'])
+    try:
+        f_inicio = datetime.strptime(f_inicio_raw, "%Y-%m-%d").strftime("%d/%m/%Y")
+        f_fin = datetime.strptime(f_fin_raw, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except:
+        f_inicio, f_fin = f_inicio_raw, f_fin_raw
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE transacciones SET cliente=%s, telefono_cliente=%s, fecha_inicio=%s, fecha_fin=%s, precio_total=%s WHERE id=%s",
+                   (cliente, telefono, f_inicio, f_fin, precio, t_id))
+    conn.commit()
+    conn.close()
+    flash("✅ Registro CRM modificado exitosamente.")
+    return redirect(url_for('dashboard'))
+
+@app.route('/eliminar-historial/<int:t_id>', methods=['POST'])
+def eliminar_historial(t_id):
+    if 'usuario_id' not in session: return redirect(url_for('index'))
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT equipo_id, presidential, cantidad, activo FROM transacciones WHERE id=%s", (t_id,))
+    res = cursor.fetchone()
+    if not res:
+        cursor.execute("SELECT equipo_id, cantidad, activo FROM transacciones WHERE id=%s", (t_id,))
+        res = cursor.fetchone()
+    if res:
+        eq_id, cant, activo = res[0], res[1], res[2]
+        if activo == 1:
+            cursor.execute("UPDATE equipos SET stock_disponible = stock_disponible + %s WHERE id=%s", (cant, eq_id))
+        cursor.execute("DELETE FROM transacciones WHERE id=%s", (t_id,))
+        conn.commit()
+        flash("🗑️ Registro del historial CRM eliminado y purgado.")
+    conn.close()
+    return redirect(url_for('dashboard'))
+
+@app.route('/editar-unidades-transaccion', methods=['POST'])
+def editar_unidades_transaccion():
+    if 'usuario_id' not in session: return redirect(url_for('index'))
+    t_id = int(request.form['transaccion_id'])
+    nueva_cantidad = int(request.form['nueva_cantidad'])
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT equipo_id, cantidad, precio_total FROM transacciones WHERE id=%s", (t_id,))
+    transaccion = cursor.fetchone()
+    if transaccion:
+        eq_id, cantidad_vieja, precio_total_viejo = transaccion
+        diferencia_unidades = nueva_cantidad - cantidad_vieja
+        cursor.execute("SELECT stock_disponible FROM equipos WHERE id=%s", (eq_id,))
+        stock_disp = cursor.fetchone()[0]
+        if diferencia_unidades > stock_disp:
+            flash(f"❌ Ajuste denegado: El almacén central no cuenta con unidades libres suficientes.")
+        else:
+            nuevo_precio_total = (float(precio_total_viejo) / cantidad_vieja) * nueva_cantidad
+            cursor.execute("UPDATE transacciones SET cantidad=%s, precio_total=%s WHERE id=%s", (nueva_cantidad, nuevo_precio_total, t_id))
+            cursor.execute("UPDATE equipos SET stock_disponible = stock_disponible - %s WHERE id=%s", (diferencia_unidades, eq_id))
+            conn.commit()
+            flash("✅ Unidades de contrato modificadas.")
+    conn.close()
+    return redirect(url_for('dashboard'))
+
 @app.route('/descargar-pdf/<int:t_id>')
 def descargar_pdf(t_id):
     if 'usuario_id' not in session: return redirect(url_for('index'))
@@ -1138,7 +1193,6 @@ def descargar_pdf(t_id):
     pdf = FPDF()
     pdf.add_page()
     
-    # Membrete Empresarial 
     pdf.set_font('Arial', 'B', 16)
     pdf.set_text_color(50, 50, 120)
     pdf.cell(0, 10, txt="SISTEMA ERP - DIVISION DE ACTIVOS TECNOLOGICOS", ln=True, align='C')
@@ -1147,22 +1201,18 @@ def descargar_pdf(t_id):
     pdf.cell(0, 10, txt="CONTRATO OFICIAL DE ARRENDAMIENTO", ln=True, align='C')
     pdf.ln(5)
 
-    # Datos Generales
     pdf.set_font('Arial', 'B', 10)
     pdf.cell(50, 8, txt=" Nro. Operacion:", border=1)
     pdf.set_font('Arial', '', 10)
     pdf.cell(0, 8, txt=f" #ERP-{t_id:05d}", border=1, ln=True)
-    pdf.set_font('Arial', 'B', 10)
     pdf.cell(50, 8, txt=" Cliente Registrado:", border=1)
     pdf.set_font('Arial', '', 10)
     pdf.cell(0, 8, txt=f" {cliente}", border=1, ln=True)
-    pdf.set_font('Arial', 'B', 10)
     pdf.cell(50, 8, txt=" Contacto:", border=1)
     pdf.set_font('Arial', '', 10)
     pdf.cell(0, 8, txt=f" {tel}", border=1, ln=True)
     pdf.ln(8)
 
-    # Tabla de Equipos
     pdf.set_font('Arial', 'B', 10)
     pdf.cell(120, 8, txt="Equipo / Hardware Asignado", border=1, align='C')
     pdf.cell(30, 8, txt="Cantidad", border=1, align='C')
@@ -1175,7 +1225,6 @@ def descargar_pdf(t_id):
     pdf.cell(40, 8, txt=f"S/. {precio:.2f}", border=1, align='C', ln=True)
     pdf.ln(10)
 
-    # Condiciones
     pdf.set_font('Arial', '', 10)
     pdf.cell(0, 8, txt=f"Vigencia del Contrato: Desde el {f_ini} hasta el {f_fin}.", ln=True)
     pdf.cell(0, 8, txt="Este documento sirve como constancia de recepcion de los equipos en optimas condiciones de hardware.", ln=True)
@@ -1224,73 +1273,6 @@ def retornar_mantenimiento():
         cursor.execute("UPDATE equipos SET stock_mantenimiento = stock_mantenimiento - %s, stock_disponible = stock_disponible + %s WHERE id=%s", (cant, cant, eq_id))
         conn.commit()
         flash(f"✅ {cant} unidades reparadas y devueltas al almacén central.")
-    conn.close()
-    return redirect(url_for('dashboard'))
-
-# ==========================================
-# RUTAS ESTÁNDAR 
-# ==========================================
-@app.route('/editar-historial', methods=['POST'])
-def editar_historial():
-    if 'usuario_id' not in session: return redirect(url_for('index'))
-    t_id = int(request.form['transaccion_id'])
-    cliente, telefono = request.form['cliente'], request.form['telefono_cliente']
-    f_inicio_raw, f_fin_raw = request.form['fecha_inicio'], request.form['fecha_fin']
-    precio = float(request.form['precio_total'])
-    try:
-        f_inicio = datetime.strptime(f_inicio_raw, "%Y-%m-%d").strftime("%d/%m/%Y")
-        f_fin = datetime.strptime(f_fin_raw, "%Y-%m-%d").strftime("%d/%m/%Y")
-    except:
-        f_inicio, f_fin = f_inicio_raw, f_fin_raw
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE transacciones SET cliente=%s, telefono_cliente=%s, fecha_inicio=%s, fecha_fin=%s, precio_total=%s WHERE id=%s",
-                   (cliente, telefono, f_inicio, f_fin, precio, t_id))
-    conn.commit()
-    conn.close()
-    flash("✅ Registro CRM modificado exitosamente.")
-    return redirect(url_for('dashboard'))
-
-@app.route('/eliminar-historial/<int:t_id>', methods=['POST'])
-def eliminar_historial(t_id):
-    if 'usuario_id' not in session: return redirect(url_for('index'))
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT equipo_id, cantidad, activo FROM transacciones WHERE id=%s", (t_id,))
-    res = cursor.fetchone()
-    if res:
-        eq_id, cant, activo = res
-        if activo == 1:
-            cursor.execute("UPDATE equipos SET stock_disponible = stock_disponible + %s WHERE id=%s", (cant, eq_id))
-        cursor.execute("DELETE FROM transacciones WHERE id=%s", (t_id,))
-        conn.commit()
-        flash("🗑️ Registro del historial CRM eliminado y purgado.")
-    conn.close()
-    return redirect(url_for('dashboard'))
-
-@app.route('/editar-unidades-transaccion', methods=['POST'])
-def editar_unidades_transaccion():
-    if 'usuario_id' not in session: return redirect(url_for('index'))
-    t_id = int(request.form['transaccion_id'])
-    nueva_cantidad = int(request.form['nueva_cantidad'])
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT equipo_id, cantidad, precio_total FROM transacciones WHERE id=%s", (t_id,))
-    transaccion = cursor.fetchone()
-    if transaccion:
-        eq_id, cantidad_vieja, precio_total_viejo = transaccion
-        diferencia_unidades = nueva_cantidad - cantidad_vieja
-        cursor.execute("SELECT stock_disponible FROM equipos WHERE id=%s", (eq_id,))
-        stock_disp = cursor.fetchone()[0]
-        if diferencia_unidades > stock_disp:
-            flash(f"❌ Ajuste denegado: El almacén central no cuenta con unidades libres suficientes.")
-        else:
-            nuevo_precio_total = (float(precio_total_viejo) / cantidad_vieja) * nueva_cantidad
-            cursor.execute("UPDATE transacciones SET cantidad=%s, precio_total=%s WHERE id=%s", (nueva_cantidad, nuevo_precio_total, t_id))
-            cursor.execute("UPDATE equipos SET stock_disponible = stock_disponible - %s WHERE id=%s", (diferencia_unidades, eq_id))
-            conn.commit()
-            flash("✅ Unidades de contrato modificadas.")
     conn.close()
     return redirect(url_for('dashboard'))
 
