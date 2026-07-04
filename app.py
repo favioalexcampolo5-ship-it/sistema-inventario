@@ -90,44 +90,38 @@ def init_db():
     
     cursor.execute("SELECT COUNT(*) FROM equipos")
     if cursor.fetchone()[0] == 0:
+        # Precios ajustados a mercado real Perú (Referencia Hiraoka, Ripley, CompuSystem)
         inventario_embebido = {
-            "DELL Latitude 3420 | Core i5-1135G7 | 8GB": ("DELL", 1),
-            "DELL Latitude 3520 | Core i7-1165G7 | 24GB": ("DELL", 20),
-            "DELL Latitude 3520 | Core i7-1165G7 | 8GB": ("DELL", 59),
-            "HP 250 G9 | Core i7-1255U | 16GB": ("HP", 44),
-            "HP 348 G7 | Core i7-10510U | 16GB": ("HP", 25),
-            "HP Victus 15-fa0007la | Core i5-12450H | 16GB": ("HP", 6),
-            "LENOVO LOQ 15IAX9 | Core i5-12450HX | 16GB": ("LENOVO", 14),
-            "LENOVO LOQ 15IRH8 | Core i5-13420H | 16GB": ("LENOVO", 23),
-            "LENOVO LOQ 15IRX9 | Core i5-12450HX | 16GB": ("LENOVO", 25),
-            "LENOVO ThinkBook 14-IML | Core i5-10210U | 8GB": ("LENOVO", 10),
-            "LENOVO ThinkPad E14 Gen2 | Core i5-1135G7 | 16GB": ("LENOVO", 32),
-            "LENOVO ThinkPad L14 Gen 2 | Core i5-1135G7 | 16GB": ("LENOVO", 12),
-            "LENOVO V15-ILL | Core i5-1035G1 | 8GB": ("LENOVO", 7)
+            "DELL Latitude 3420 | Core i5-1135G7 | 8GB": ("DELL", 1, 1450.00),
+            "DELL Latitude 3520 | Core i7-1165G7 | 24GB": ("DELL", 20, 2950.00),
+            "DELL Latitude 3520 | Core i7-1165G7 | 8GB": ("DELL", 59, 2600.00),
+            "HP 250 G9 | Core i7-1255U | 16GB": ("HP", 44, 2900.00),
+            "HP 348 G7 | Core i7-10510U | 16GB": ("HP", 25, 3899.00),
+            "HP Victus 15-fa0007la | Core i5-12450H | 16GB": ("HP", 6, 3899.00),
+            "LENOVO LOQ 15IAX9 | Core i5-12450HX | 16GB": ("LENOVO", 14, 3400.00),
+            "LENOVO LOQ 15IRH8 | Core i5-13420H | 16GB": ("LENOVO", 23, 3500.00),
+            "LENOVO LOQ 15IRX9 | Core i5-12450HX | 16GB": ("LENOVO", 25, 3600.00),
+            "LENOVO ThinkBook 14-IML | Core i5-10210U | 8GB": ("LENOVO", 10, 1800.00),
+            "LENOVO ThinkPad E14 Gen2 | Core i5-1135G7 | 16GB": ("LENOVO", 32, 2400.00),
+            "LENOVO ThinkPad L14 Gen 2 | Core i5-1135G7 | 16GB": ("LENOVO", 12, 2500.00),
+            "LENOVO V15-ILL | Core i5-1035G1 | 8GB": ("LENOVO", 7, 1600.00)
         }
         
         equipos_procesados = []
         for nombre, datos in inventario_embebido.items():
             marca = datos[0].upper().strip()
             stock = datos[1]
-            precio_semanal_base = 45.00
-            precio_mercado_estimado = 2200.00
-            nombre_upper = nombre.upper()
+            precio_mercado_real = datos[2]
             
-            if any(k in nombre_upper for k in ["I9", "XEON", "VICTUS", "LOQ", "ZBOOK"]):
-                precio_semanal_base += 55.00  
-                precio_mercado_estimado += 2500.00
-            elif any(k in nombre_upper for k in ["I7", "RYZEN 7", "PRECISION"]):
-                precio_semanal_base += 25.00   
-                precio_mercado_estimado += 1300.00
-            if any(k in nombre_upper for k in ["24GB", "32GB", "64GB"]):
-                precio_semanal_base += 15.00   
-                precio_mercado_estimado += 700.00
-            elif "8GB" in nombre_upper:
-                precio_semanal_base -= 5.00   
-                precio_mercado_estimado -= 300.00
+            # El alquiler se basa en un ROI estándar de hardware (~1.5% a 2.5% del valor real x semana)
+            if any(k in nombre.upper() for k in ["LOQ", "VICTUS"]):
+                tarifa_semanal = precio_mercado_real * 0.025 # Gama Gamer, mayor desgaste
+            elif any(k in nombre.upper() for k in ["I7", "RYZEN 7"]):
+                tarifa_semanal = precio_mercado_real * 0.022 # Gama Alta Ejecutiva
+            else:
+                tarifa_semanal = precio_mercado_real * 0.018 # Gama Media Corporativa
                 
-            equipos_procesados.append((nombre, marca, stock, stock, max(precio_semanal_base, 30.00), precio_mercado_estimado))
+            equipos_procesados.append((nombre, marca, stock, stock, max(tarifa_semanal, 30.00), precio_mercado_real))
             
         try:
             cursor.execute("TRUNCATE TABLE equipos CASCADE") 
@@ -300,7 +294,7 @@ VISTA_DASHBOARD = """
             <div class="flex items-center justify-between w-full lg:w-auto">
                 <div class="flex items-center space-x-2">
                     <span class="text-lg font-black bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent tracking-wider">ERP MANAGEMENT</span>
-                    <span class="bg-slate-950 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-800 font-mono">CLOUD DB v11.0</span>
+                    <span class="bg-slate-950 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-800 font-mono">CLOUD DB v12.0</span>
                 </div>
                 <div class="text-xs text-slate-400 lg:hidden flex space-x-2">
                     <a href="{{ url_for('dashboard') }}" class="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-2.5 py-1 rounded">🔄 Sync</a>
@@ -1144,6 +1138,7 @@ def descargar_pdf(t_id):
     pdf = FPDF()
     pdf.add_page()
     
+    # Membrete Empresarial 
     pdf.set_font('Arial', 'B', 16)
     pdf.set_text_color(50, 50, 120)
     pdf.cell(0, 10, txt="SISTEMA ERP - DIVISION DE ACTIVOS TECNOLOGICOS", ln=True, align='C')
@@ -1152,6 +1147,7 @@ def descargar_pdf(t_id):
     pdf.cell(0, 10, txt="CONTRATO OFICIAL DE ARRENDAMIENTO", ln=True, align='C')
     pdf.ln(5)
 
+    # Datos Generales
     pdf.set_font('Arial', 'B', 10)
     pdf.cell(50, 8, txt=" Nro. Operacion:", border=1)
     pdf.set_font('Arial', '', 10)
@@ -1166,6 +1162,7 @@ def descargar_pdf(t_id):
     pdf.cell(0, 8, txt=f" {tel}", border=1, ln=True)
     pdf.ln(8)
 
+    # Tabla de Equipos
     pdf.set_font('Arial', 'B', 10)
     pdf.cell(120, 8, txt="Equipo / Hardware Asignado", border=1, align='C')
     pdf.cell(30, 8, txt="Cantidad", border=1, align='C')
@@ -1178,6 +1175,7 @@ def descargar_pdf(t_id):
     pdf.cell(40, 8, txt=f"S/. {precio:.2f}", border=1, align='C', ln=True)
     pdf.ln(10)
 
+    # Condiciones
     pdf.set_font('Arial', '', 10)
     pdf.cell(0, 8, txt=f"Vigencia del Contrato: Desde el {f_ini} hasta el {f_fin}.", ln=True)
     pdf.cell(0, 8, txt="Este documento sirve como constancia de recepcion de los equipos en optimas condiciones de hardware.", ln=True)
