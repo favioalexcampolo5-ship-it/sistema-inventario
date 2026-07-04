@@ -66,8 +66,14 @@ def init_db():
         )
     ''')
     
-    cursor.execute("ALTER TABLE equipos ADD COLUMN IF NOT EXISTS precio_mercado NUMERIC DEFAULT 2500")
-    cursor.execute("ALTER TABLE equipos ADD COLUMN IF NOT EXISTS stock_mantenimiento INTEGER DEFAULT 0")
+    # ¡CLAVE! Ejecutar los ALTER TABLE fuera del condicional para forzar la migración
+    try:
+        cursor.execute("ALTER TABLE equipos ADD COLUMN IF NOT EXISTS precio_mercado NUMERIC DEFAULT 2500")
+        cursor.execute("ALTER TABLE equipos ADD COLUMN IF NOT EXISTS stock_mantenimiento INTEGER DEFAULT 0")
+        conn.commit()
+    except Exception as e:
+        print(f"[DATA-CORE] Error en la migración de columnas: {e}")
+        conn.rollback()
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transacciones (
@@ -325,7 +331,6 @@ VISTA_DASHBOARD = """
 
     <main class="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
         
-        <!-- ALERTAS DE DEVOLUCIÓN -->
         {% if alertas_devolucion %}
         <div class="space-y-2">
             {% for alerta in alertas_devolucion %}
@@ -340,16 +345,12 @@ VISTA_DASHBOARD = """
         </div>
         {% endif %}
         
-        <!-- ALERTAS FLASH GLOBALES -->
         {% with messages = get_flashed_messages() %}
             {% if messages %}
                 <div class="bg-indigo-500/20 border border-indigo-500 text-indigo-200 p-4 rounded-xl text-sm font-semibold shadow-lg text-center">{{ messages[0] }}</div>
             {% endif %}
         {% endwith %}
 
-        <!-- ==============================
-        SECCIÓN 1: INVENTARIO Y ALQUILERES
-        =============================== -->
         <div id="sec-inventario" class="section-container space-y-6">
             
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -458,7 +459,6 @@ VISTA_DASHBOARD = """
                     </div>
                 </div>
 
-                <!-- PANEL FLOTANTE LATERAL -->
                 <div class="space-y-6">
                     <div id="panel-opciones-equipo" class="bg-slate-900 border-2 border-dashed border-slate-800 p-5 rounded-xl text-center text-slate-500 text-xs flex flex-col justify-center h-48">
                         <span>💡 Haz clic en cualquier fila de la lista del inventario para ver las especificaciones técnicas completas y activar sus acciones comerciales o de soporte técnico.</span>
@@ -476,7 +476,6 @@ VISTA_DASHBOARD = """
                             <button id="tab-btn-soporte" onclick="cambiarPestana('soporte')" class="w-1/3 pb-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200">🛠️ Soporte</button>
                         </div>
 
-                        <!-- TAB: ESPECIFICACIONES -->
                         <div id="tab-content-specs" class="space-y-3">
                             <div>
                                 <span class="text-slate-400 block font-semibold text-[10px] uppercase">Ficha Técnica Base</span>
@@ -497,7 +496,6 @@ VISTA_DASHBOARD = """
                             </div>
                         </div>
 
-                        <!-- TAB: FORMULARIO ALQUILER -->
                         <div id="tab-content-renta" class="hidden">
                             <form action="{{ url_for('procesar_salida') }}" method="POST" class="space-y-3">
                                 <input type="hidden" name="equipo_id" id="form-action-id">
@@ -535,7 +533,6 @@ VISTA_DASHBOARD = """
                             </form>
                         </div>
 
-                        <!-- TAB: MANTENIMIENTO TÉCNICO -->
                         <div id="tab-content-soporte" class="hidden py-4 text-center">
                             <span class="text-3xl block mb-2">🛠️</span>
                             <h4 class="text-white font-bold text-sm mb-1">Módulo de Revisión Técnica</h4>
@@ -557,9 +554,6 @@ VISTA_DASHBOARD = """
             </div>
         </div>
 
-        <!-- ==============================
-        SECCIÓN 2: LABORATORIO Y MANTENIMIENTO
-        =============================== -->
         <div id="sec-mantenimiento" class="section-container hidden space-y-6">
             <div class="bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-800">
                 <h2 class="text-base sm:text-lg font-bold text-white mb-1">🛠️ Laboratorio y Mantenimiento Técnico</h2>
@@ -599,9 +593,6 @@ VISTA_DASHBOARD = """
             </div>
         </div>
 
-        <!-- ==============================
-        SECCIÓN 3: BI ESTADÍSTICAS
-        =============================== -->
         <div id="sec-analytics" class="section-container hidden space-y-6">
             <div class="bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-800">
                 <h2 class="text-base sm:text-lg font-bold text-white mb-1">📊 Inteligencia de Negocios (Business Intelligence)</h2>
@@ -637,9 +628,6 @@ VISTA_DASHBOARD = """
             </div>
         </div>
 
-        <!-- ==============================
-        SECCIÓN 4: CRM HISTORIAL
-        =============================== -->
         <div id="sec-clientes" class="section-container hidden space-y-6">
             <div class="bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-800">
                 <h2 class="text-base sm:text-lg font-bold text-white mb-1">👥 Módulo CRM - Base de Datos Transaccional</h2>
@@ -693,9 +681,6 @@ VISTA_DASHBOARD = """
 
     </main>
 
-    <!-- ==========================================
-    MODALES FLOTANTES
-    =========================================== -->
     <div id="modal-edit-unidades" class="hidden fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center px-4 backdrop-blur-sm">
         <div class="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-sm p-6 shadow-2xl">
             <h3 class="text-white font-bold text-base mb-1">📝 Modificar Unidades del Contrato</h3>
@@ -787,9 +772,6 @@ VISTA_DASHBOARD = """
         </div>
     </div>
 
-    <!-- ==========================================
-    JAVASCRIPT FRONTEND
-    =========================================== -->
     <script>
     let activeTarifaSugerida = 0.0;
 
@@ -1076,7 +1058,7 @@ def descargar_pdf(t_id):
     pdf = FPDF()
     pdf.add_page()
     
-    # Membrete Empresarial (Customizado)
+    # Membrete Empresarial 
     pdf.set_font('Arial', 'B', 16)
     pdf.set_text_color(50, 50, 120)
     pdf.cell(0, 10, txt="SISTEMA ERP - DIVISION DE ACTIVOS TECNOLOGICOS", ln=True, align='C')
