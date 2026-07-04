@@ -66,14 +66,8 @@ def init_db():
         )
     ''')
     
-    # ¡CLAVE! Ejecutar los ALTER TABLE fuera del condicional para forzar la migración
-    try:
-        cursor.execute("ALTER TABLE equipos ADD COLUMN IF NOT EXISTS precio_mercado NUMERIC DEFAULT 2500")
-        cursor.execute("ALTER TABLE equipos ADD COLUMN IF NOT EXISTS stock_mantenimiento INTEGER DEFAULT 0")
-        conn.commit()
-    except Exception as e:
-        print(f"[DATA-CORE] Error en la migración de columnas: {e}")
-        conn.rollback()
+    cursor.execute("ALTER TABLE equipos ADD COLUMN IF NOT EXISTS precio_mercado NUMERIC DEFAULT 2500")
+    cursor.execute("ALTER TABLE equipos ADD COLUMN IF NOT EXISTS stock_mantenimiento INTEGER DEFAULT 0")
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transacciones (
@@ -447,7 +441,7 @@ VISTA_DASHBOARD = """
                                         <td class="py-3.5 px-4 text-center flex justify-center space-x-2 whitespace-nowrap">
                                             <a href="{{ url_for('descargar_pdf', t_id=alq[0]) }}" target="_blank" class="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-2 py-1 rounded font-bold hover:bg-indigo-600 hover:text-white transition-all text-[11px]" title="Generar PDF">📄 PDF</a>
                                             <button onclick="abrirModalEdicionUnidades('{{ alq[0] }}', '{{ alq[2] }}', '{{ alq[6] }}', '{{ alq[1] }}')" class="bg-sky-500/10 border border-sky-500/20 text-sky-400 px-2 py-1 rounded font-bold hover:bg-sky-600 hover:text-white transition-all text-[11px]">Editar</button>
-                                            <a href="{{ url_for('devolver', transaccion_id=alq[0]) }}" class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-1 rounded font-bold hover:bg-emerald-500 hover:text-white transition-all text-[11px]">Retorno</a>
+                                            <a href="{{ url_for('devolver', transaccion_id=alq[0]) }}" class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-1 rounded font-bold hover:bg-emerald-50 hover:text-white transition-all text-[11px]">Retorno</a>
                                         </td>
                                     </tr>
                                     {% else %}
@@ -670,7 +664,7 @@ VISTA_DASHBOARD = """
                                     </form>
                                 </td>
                             </tr>
-                            {% empty %}
+                            {% else %}
                             <tr><td colspan="7" class="text-center py-6 text-slate-500">No se detectan registros comerciales en el CRM local.</td></tr>
                             {% endfor %}
                         </tbody>
